@@ -1,0 +1,2140 @@
+第15章
+进程间通信
+15.1引言
+第8章说明了进程控制原语并且观察了如何调用多个进程。但是这些进程之间交换信息的 方法只能是经由fork或exec传送打开文件，或者通过文件系统。本章将说明进程之间相互通
+信的其他技术	IPC (InterProcess Communication) „
+过去，UNIX系统IPC是各种进程通信方式的统称，但是，其中极少能在所有UNIX系统实 现中进行移植。随着POSIX和Open Group (以前是X/Open)标准化的推进和影响的扩大，情 况虽已得到改善，但差别仍然存在。表15-1摘要列出了本书讨论的四种实现所支持的不同形式 的 IPC。
+
+IPC类型	SUS	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+半双工管道	•	(全)	•	•	(全)
+FIFO	•	•	•	•	•
+全双工管道	允许	•，UDS	opt, UDS	UDS	•，UDS
+命名全双工管道	XSI可选	UDS	opt, UDS	UDS	•，UDS
+消息队列	XSI	•	•		•
+信号量	XSI	•	•	•	•
+共享存储	XSI	•	•	•	鲁
+套接字
+STREAMS	XSI可选	•	•
+opt	•	•
+注意，Single UNIX Specification (“SUS”列)要求的是半双工管道，但允许实现支持全双 工管道。若应用程序在编写时假定基础操作系统只支持半双工管道，那么支持全双工管道的实 现仍将使这种应用程序正常工作。表中使用“(全)”而非黑点显示用全双工管道支持半双工管 道的实现。
+在表15-1中的黑点表示基本功能得到支持。对于全双工管道，如果经由UNIX域套接字(见 17.3节)支持该特征，则在相应列中标示“UDS”。某些实现用管道和UNIX系统域套接字支持 该特征，所以相关位置表示为“UDS”和一个黑点。
+正如在14.4节所提到的那样，在Single UNIX Specification中，对STREAMS的支持是可选择 的。命名全双工管道是作为已装配的基于STREAMS的管道提供的，所以在Single UNIX [495] Specification中它也是可选的。在Linux中，对STREAMS的支持是可用的，但依靠称为“LiS”
+(Linux STREAMS)的单独可选择包。在平台对相应特征以可选择包方式提供支持时，相应位
+ 
+398 第15章进程间通信
+置标示为“opt”，可选择包通常并非是默认安装的。
+表15-1中前7种IPC通常限于同一台主机的各个进程间的ipc。最后两种，即套接字和 STREAMS,是仅有的两种支持不同主机上各个进程间IPC的类型。
+我们将有关IPC的讨论分成3章。本章讨论经典的IPC:管道、FIFO,消息队列、信号量以 及共享存储器。下一章将观察使用套接字的网络IPC。第17章将考査IPC的某些高级特征。
+15.2管道
+管道是UNIX系统IPC的最古老形式，并且所有UNIX系统都提供此种通信机制。管道有下 面两种局限性：
+(1)	历史上，它们是半双工的(即数据只能在-个方向上流动)。现在，某些系统提供全双 工管道，但是为了最佳的可移植性，我们决不应预先假定系统使用此特性。
+(2)	它们只能在具有公共祖先的进程之间使用。通常，一个管道由一个进程创建，然后该 进程调用fork,此后父、子进程之间就可应用该管道。
+我们将会看到FIFO (见15.5节)没有第二种局限性，UNIX域套接字(见17.3)和命名流管 道(见17.2.2节)则没有这两种局限性。
+尽管有这两种局限性’半双工管道仍是最常用的IPC形式。每当你在管道线中键入一个 由shell执行的命令序列时，shell为每-条命令单独创建一进程’然后将前一条命令进程的标准 输出用管道与后一条命令的标准输人相连接。
+管道是由调用pipe函数而创建的：
+#include <unistd.h> int pipe (int filedes⑵)；
+返回值：若成功则返回0，若出错则返回-1
+经由参数A'/et/以返回两个文件描述符：为读而打开，/,7e办彳7?为写而打开。 filedesl 77的输出是/?/«fes/07的输人。
+在4.3BSD、4.4BSD和Mac OS X 10.3中，管道是用UNIX域套接字实现的。虽然UNIX域套接 字是默认全双工的’但这些操作系统对用于管道的杳接字进行了处理’使这些管道只以半双工模式 梯作。
+P0SIX.1允许实现支持全双工管道。对于这些实现，filedes[0]和filedesn】以读/写方式_打开。
+有两种方法来描绘一个半双工管道’见图15-1。左半图显示了管道的两端在一个进程中相 互连接，右半图则说明数据通过内核在管道中流动。
+fstat函数(见4.2节)对管道的每一端都返回一个FIFO类型的文件描述符’可以用 S_ISFIF0宏来测试管道。
+POS1X.1规定stat结构的st一size成员吋于管道是表定义的。但是当fstat函数应用于管道读端 的文件描述符时，很多系统在st_size中存放管道中可用于读的字节数。但是，这是不可移枝的。
+单个进程中的管道几乎没有任何用处。通常，调用pipe的进程接着调用fork,这样就创 建了从父进程到子进程(或反向)的IPC通道。图15-2显示了这种情况。
+
+ 
+ 
+15.2 管 道 399
+用户进程		用户进程
+	或	
+fd[0] fd[l]		fd[0] fd[l]
+v	管道 h	
+内核
+图15-1观察半双工管道的两种方法
+调用fork之后做什么取决于我们想要有的数据流的方向。对于从父进程到子进程的管道， 父进程关闭管道的读端(fd[0])’子进程则关闭写端(fd[l])。图15-3显示了在此之后描述
+符的安排。
+父进程	子进程	父进程	子进程
+ 
+图15-2调用fork之后的半双工管道	图15-3从父进程到子进程的管道
+为了构造从子进程到父进程的管道，父进程关闭fd[l]，子进程关闭fd[0]。
+当管道的一端被关闭后，下列两条规则起作用：
+(1)	当读一个写端已被关闭的管道时，在所有数据都被读取后，read返回0，以指示达到了 文件结束处。(从技术方面考虑，管道的写端还有进程时，就不会产生文件的结束。可以复制一 个管道的描述符，使得有多个进程对它具有写打开文件描述符。但是，通常一个管道只有一个读 进程、一个写进程。下一节介绍FIFO时，我们会看到对于一个单一的FIFO常常有多个写进程。)
+(2)	如果写一个读端已被关闭的管道，则产生信号SIGPIPE。如果忽略该信号或者捕捉该 信号并从其处理程序返回，则write返回-1, errno设置为EPIPE。
+在写管道(或FIFO)时，常量PIPE_BUF规定了内核中管道缓冲区的大小。如果对管道调 用write,而且要求写的字节数小于等于PIPE_BUF，则此操作不会与其他进程对同一管道 (或FIFO)的write操作穿插进行。但是，若有多个进程同时写一个管道(或FIFO),而且有 进程要求写的字节数超过PIPE_BUF字节数时，则写操作的数据可能相互穿插。用pathconf 或fpathconf函数(见表2-11)可以确定PIPE_BUF的值。
+ 
+程序清单15-1创建了一个从父进程到子进程的管道，并且父进程经由该管道向子进程传送
+
+[497]
+[498]
+ 
+400 第15幸进程间通信
+数据。
+	程序清单15-1经由管道父进程向子进程传送数据
+#include "apue.h” int
+main (void)
+{
+int n； int fd[2]; pidt一t pid; char line[MAXLINE];
+if (pipe(fd) < 0)
+err_sys("pipe error")； if ((pid = fork()) < 0) { err_sys("fork error")；
+} else if (pid > 0) {	/* parent */
+close(fd[0])；
+write(fd[1], "hello world\n", 12);
+} else {	/* child */
+close(fd[1])；
+n = read(fd[0], line, MAXLINE)? write(STDOUT一FILENO, line, n)；
+} 一 exit(0)；
+在上面的例子中，直接对管道描述符调用read和write。更好的方法是将管道描述符复 制为标准输入和标准输出。在此之后通常子进程执行另一个程序，该程序或者从标准输入(已 @创建的管道)读数据，或者将数据写至其标准输出(该管道)。
+试编写一个程序，其功能是每次一页显示已产生的输出。已经有很多UNIX系统实用程序 具有分页功能’因此无需再构造一个新的分页程序’而是调用用户最喜爱的分页程序。为了避 免先将所有数据写到一个临时文件中，然后再调用系统中有关程序显示该文件，我们希望将输 出通过管道直接送到分页程序。为此’先创建一个管道，调用fork产生一个子进程，使子进 程的标准输入成为管道的读端，然后调用exec，执行用户喜爱的分页程序。程序清单15-2显示 了如何实现这些操作。(本例要求在命令行中有一个参数说明要显示文件的名称。通常，这种 类型的程序要求在终端上显示的数据已经在存储器中。)
+		程序清单15-2将文件ft制到分页程序 	
+#include "apue.h"
+#include <sys/wait.h>
+#define DEF—PAGER H/bin/more丨丨 /* default pager program */ int
+main(int argc, char *argv[])
+{
+int n； int fd[2]； pid—t pid；
+
+ 
+15.2 管 道 401
+char *pager, *argv0； char line[MAXLINE]；
+FILE *fp；
+if (argc 1= 2)
+err一quit("usage: a.out <pathname>");
+if ((fp = fopen(argv[1], "r”)) == NULL) err一sys("can,t open %s", argv[l]); if (pipe(fd) < 0)
+err—sys("pipe error");
+if ((pid = forkO ) < 0) { err_sys{"fork error");
+} else if (pid > 0) {
+/* parent */
+close(fd[0]),
+/* close read end */
+/★ parent copies argv[1] to pipe */ while (fgets(line, MAXLINE, fp) != NULL) { n = strlen(line)； if (write(fd[1], line, n) 1= n)
+err一sys("write error to pipe");
+} _ if (ferror(fp))
+err 一 sys (11 fgets error”)；
+close(fd[l])； /* close write end of pipe for reader */
+if (waitpid(pid, NULL, 0) < 0) err_sys("waitpid error");
+exit(0);
+} else {	/* child */
+close(fd[13); /* close write end */ if (fd[0] != STDIN一FILENO) {
+if (dup2(fd[0]7 STDIN一FILENO) STDIN—FILENO) err_sys("dup2 error to stdin"); close(fd[0]); /* don't need this after dup2 */
+國
+/* get arguments for execl() */ if ((pager = getenv("PAGER")) »= NULL) pager = DEF一PAGER; if ((argvO = strrchr(pager, '/')) i- NULL)
+argv0++?	/* step past rightmost slash
+else
+argvO = pager； /* no slash in pager */
+if (execl(pager, argvO, (char *)0) < 0) err一sys("execl error for %s", pager);
+exit(0)
+在调用fork之前先创建一个管道。fork之后父进程关闭其读端，子进程关闭其写端。子 进程然后调用dup2，使其标准输入成为管道的读端。当执行分页程序时，其标准输入将是管 道的读端。
+当我们将一个描述符复制到另一个时(在子进程中，fd[0]复制到标准输入)，应当注意 在复制之前该描述符的值并不是所希望的值。如果该描述符已经具有所希望的值，并且我们先 调用dup2,然后调用close则将关闭此进程中只有该单个描述符所代表的打开文件。(回忆 3.12节中所述，当dup2中的两个参数值相等时的操作。)在本程序中，如果shell没有打开标准
+
+ 
+402 第15幸进程间通信
+输入，那么程序开始处的fopen应已使用描述符0,也就是最小未使用的描述符，所以fd[0] 决不会等于标准输入。尽管如此，只要先调用dup2,然后调用close以复制一个描述符到另 一个，作为一种保护性的编程措施，我们总是先将两个描述符进行比较。
+请注意，我们是如何使用环境变量PAGER试图获得用户分页程序名称的。如果这种操作没 有成功，则使用系统默认值。这是环境变量的常见用法。	□
+回忆8.9节中的5个函数：TELL_WAIT、TELL_PARENT、TELL—CHILD、WAIT_PARENT 以及WAIT一CHILD。程序清单10-17提供了一个使用信号的实现。程序淸单15-3则是一个使用管 道的实现。
+	程序清单15-3使父、子进程同步的例程	
+#include "apue.h"
+static int pfdl[2], pfd2[2]；
+void
+TELL一WAIT (void)
+{—
+if (pipe(pfdl) < 0 || pipe(pfd2) < 0) err一sys("pipe error")；
+} _ void
+TELL一PARENT(pid_t pid)
+{ ~ '
+if (write(pfd2[1]# Mc”， 1)丨=l) err一sys("write error")；
+} _ void
+WAIT_PARENT (void)
+{ _
+char c；
+if (read{pfdl[0], &c# 1) != l) err一sys("read error")；
+if (c ! = 1 p#)
+)	err_quit("WAIT_PARENT: incorrect data")；
+void
+TELL一CHILD(pid 一t pid)
+{' '
+if (write(pfdl[1], "p", l) != l) err_sys("write error")；
+} _ void
+WAIT_CHILD(void)
+{ _
+char c；
+if (read(pfd2[0], &c, 1) !» 1)
+
+ 
+15.3 popen和pclose函数 403
+err_sys("read error")；
+if (c 1= )
+err_quit("WAIT_CHILD: incorrect data");
+如图15-4所示，在fork之前创建了两个管道。父进程在调用TELL_CHILD时，写一个字符 “P”至上一个管道，子进程在调用TELL_PARENT时，经由下一个管道写一个字符“C”。相应 的WAIT_xxx函数调用read读这个字符，并发生阻塞。
+父进程	子进程
+	V •	
+pfd2 [0]	”c"	pfd2[l]
+		
+图15-4用两个管道实现父子进程同步
+请注意，每一个管道都有一个额外的读取进程，这没有关系。也就是说，除了子进程从 pfdl[0]读取，父进程也有上一个管道的读端。因为父进程并没有执行对该管道的读操作，所 以这不会产生任何影响。	口
+15.3 popen和pclose函数
+常见的操作是创建一个管道连接到另一个进程，然后读其输出或向其输入端发送数据，为此，
+标准I/O库提供了两个函数popen和pclose。这两个函数实现的操作是：创建一个管道，调用 fork产生一个子进程，关闭管道的不使用端，执行一个shell以运行命令，然后等待命令终止。
+#include <stdio.h>	
+FILE *popen (const char * cmdstring,	const char *type)；
+	返回值：若成功则返回文件指计，若出错则返回NULL
+int pclose (FILE *fp)；	
+	返回值：级的终止状态，若出错则返回-1
+函数popen先执行fork，然后调用exec以执行并且返回一个标准I/O文件指针。 如果type是”r",则文件指针连接到的标准输出(见图15-5)。
+父进程	cmdstring (子进程)
+ 
+图 15-5 执行fp = popen (cmdsirmg, "r")函数的结果 如果邮e是"W”，则文件指针连接到c/rn/sm吨的标准输入(见图15-6)。
+父进程	cmdstring (子进程)
+ 
+图 15-6 执行fp = popen(cmdstring, "wn)函数的结果 有一种方法可以帮助我们记住popen最后一个参数及其作用，这就是与fopen进行类比。如果
+[502]
+函
+
+ 
+404 第15幸进程间通信
+type^ “r”，则返回的文件指针是可读的，如果0^是“w”，则是可写的。
+pclose函数关闭标准I/O流，等待命令执行结束，然后返回shell的终止状态。(我们曾在
+8.6	节对终止状态进行过说明，system函数(见8.13节)也返回终止状态。)如果shell不能被执 行，则pclose返回的终止状态与shell已执行exit (127) —样。
+由Bourne shell以下列方式执行； sh -c cmdstring
+这表示shell将扩展中的任何特殊字符。例如，可以使用，
+fp = popen("Is *.c", "r");
+或者
+fp = popen("cmd 2>&1H f "r")?
+ 
+用popen重写程序清单15-2,其结果示于程序清单15-4中。
+程序清单15-4用pppen向分页程序传送文件
+#	include "apue.h"
+#include <sys/wait.h>
+#define PAGER "${PAGER：-more}" /* environment variable, or default */ main(int argc, char *argv[])
+{
+char line[MAXLINE];
+FILE *fpin, *fpout；
+if (argc != 2)
+err一quit("usage: a.out <pathname>")；
+if ((fpin = fopen(argv[l], "r"))打 NULL) err_sys(Mcan,t open %s", argv[l])；
+if ((fpout = popen(PAGER, nw")) == NULL) err—sys (Mpopen error*')；
+/* copy argv[l] to pager */
+while (fgets(line, MAXLINE, fpin) 1= NULL) { if (fputs(line, fpout) == EOF)
+err_sys("fputs error to pipe">;
+} 一
+if (ferror(fpin))
+err_sys("fgets error")；
+if (pclose(fpout) == -1)
+err_sys("pclose error");
+exit(0)?
+使用popen减少了需要编写的代码量。
+shell命令${PAGER:-more}的意思是：如果shell变量PAGER已经定义，且其值非空，则使 用其值，否则使用字符串more。	□
+
+ 
+15.3 popen和pclose函数 405
+pfd[2]； pid; *fp；
+/*
+if
+if
+}
+if
+if
+only allow "r" or 11 wn */
+((type[0] != ,rt && type[0] != ) || type[1]
+errno = EINVAL；	/* required by POSIX */
+re turn (NULL)；
+i= 0)
+(childpid == NULL) {	/* first time through */
+/* allocate zeroed out array for child pids */
+maxfd = open一max();
+if ((childpid = calloc(maxfd, sizeof(pid—t))) == NULL)
+return(NULL)；
+(pipe(pfd) < 0)
+return(NULL)； /* errno set by pipe() */
+((pid = fork()) < 0) {
+return(NULL)； /* errno set by fork() */
+} else if (pid == 0) {	/* child */
+if (*type == ,r,) {
+close(pfd[0])；
+if (pfd[l] != STDOUT_FILENO) {
+dup2(pfd[1], STDOUT—FILENO);
+close(pfd[1])；
+}
+} else {
+close(pfd[1】)；
+if (pfd[0] != STDIN 一FILENO) {
+dup2(pfd[0]f STDIN一FILENO)；
+close(pfd [0])；
+}
+实例：popen和pclose函数
+程序清单15-5是我们编写的popen和pclose版本。
+程序清单15-5 popen和pclose函数
+#include "apue.h11 #include <errno.h>
+#include <fcntl.h>
+社include <sys/wait.h>
+/*
+*	Pointer to array allocated at run-1ime.
+*/
+static pid_t *childpid = NULL;
+/*
+*	From our open—max(), Figure 2.16.
+*/
+static int	maxfd；
+FILE * popen(const
+char *cmdstring, const char *type)
+I E
+Ltt dL n n i I ■Hi p F
+
+ 
+406 第15幸进程间通信
+/* close all descriptors in childpid[3 */ for (i = 0; i < maxfd； i++) if (childpid[i】> 0) close(i)；
+execl("/bin/sh", ”sh", "-c", cmdstring, (char *)0); _exit(127)；
+/* parent continues... */ if (*type == ) { close(pfd[1])；
+if ((fp = fdopen(pfd[0], type)) == NULL) return(NULL);
+} else {
+close(pfd[0])；
+if ((fp = fdopen(pfd[1], type)) == NULL) return(NULL)?
+childpid[fileno(fp)3 = pid; /* remember child pid for this fd */ return(fp)；
+}
+pclose(FILE *fp)
+{
+int	fd, stat;
+pid—t pid;
+if (childpid == NULL) { errno = EINVAL；
+return(-1)；	/* popen() has never been called */
+fd = fileno(fp)；
+if ((pid = childpid[fd]) == 0) { errno = EINVAL；
+return(早1);	/* fp wasn't opened by popen() */
+childpid[fd] = 0； if (fclose(fp) == EOF) return(-1)；
+while (waitpid(pid, &stat, 0) < 0) if (errno != EINTR)
+return(-1)； /* error other than EINTR from waitpid() */
+return(stat)； /* return child's termination status */
+虽然popen的核心部分与本章中以前用过的代码类似，但是增加了很多需要考虑的细节。 首先，每次调用poperi时，应当记住所创建的子进程的进程ID，以及其文件描述符或FILE指 针。我们选择在数组childpid中保存子进程ID，并用文件描述符作为其下标。于是，当以 FILE指针作为参数调用pclose时，我们调用标准I/O函数fileno得到文件描述符，然后取得 子进程ID,并用其作为参数调用waitpid。因为一个进程可能调用popen多次，所以在动态分 配childpid数组时(第一次调用popen时)，其数组长度应当是最大文件描述符数，于是该
+
+ 
+15.3 popen和pclose函数 407
+数组中可以存放与最大文件描述符数相同的子进程。
+调用pipe、fork以及为每个进程复制相应的文件描述符，这些操作与本章前面所述的 类似。
+POSIX.I要求子进程关闭在以前调用popen时打开且当前仍旧打开的所有I/O流。为此，在 子进程中从头逐个检査childpid数组的各元素，关闭仍旧打开的任何描述符。
+若pclose的调用者已经为信号SIGCHLD设置了一个信号处理程序，则pclose中的 waitpid调用将返回一个EINTR。因为允许调用者捕捉此信号(或者任何其他可能中断wai tpid 调用的信号)，所以当waitpid被-个捕捉到的信号中断时，我们只是再次调用waitpid。
+注意，如果应用程序调用waitpid,并且获得popen所创建的子进程的终止状态，则在应 用程序调用pclose时，其中将调用waitpid,它发现子进程已不再存在，此时返回_1， errno则被设置为ECHILD。这正是POSIX.1所要求的。
+如果一个信号中断了wait, pclose的早期版本返回EINTR。pclose的早期版本在wait期间阻塞 或忽略信号SIGINT、SIGQUIT以及SIGHUP,. POSIX.I则不允许这一点。
+□
+注意，popen决不应由设置用户ID或设置组ID程序调用。当它执行命令时，popen等同于：
+execl("/bin/sh"# "sh", "-c", command, NULL)；
+它在从调用者继承的环境中执行shell,并由shell解释执行一个心怀不轨的用户可以 操纵这种环境，使得shell能以设置ID文件模式所授与的提升了的权限以及非预期的方式执行 命令。
+popen特别适用于构造简单的过滤器程序，它变换运行命令的输入或输出。当命令希望构 造它自己的管道线时，就是这种情形。
+实例
+考虑一个应用程序，它向标准输出写一个提示，然后从标准输入读1行。使用popen,可 以在应用程序和输入之间插入一个程序以便对输入进行变换处理。图15-7显示了为此做的进程 安排。
+父进程	过滤程序
+ 
+图15-7用popen对输入进行变换处理
+对输入进行的变换可能是路径名扩充，或者是提供一种历史机制(记住以前输入的命令)。 程序清单15-6是--个简单的过滤程序，它只是将标准输入复制到标准输出，在复制时将所 有大写字符变换为小写字符。在写了一行之后，对标准输出进行了冲洗(用fflush)，其理由 将在下一节介绍协同进程时讨论。
+國
+[508]
+
+ 
+408 第15章进程间通信
+	程序清单15-6将大写字符换成小写字符的过滤程序
+#	inc lude "apue.h，1 #include <ctype.h>
+int
+main(void)
+{
+int c；
+while ((c = getchar()) l= EOF) { if (isupper(c))
+c = tolower(c)； if (putchar(c) == EOF)
+err_sys("output error”)； if (c == '\n,)
+fflush(stdout)；
+}
+exit(0)；
+对该过滤程序进行编译，其可执行目标代码存放在文件myuclc中，然后在程序清单15-7
+中用popen调用它们。
+	程序清单15-7调用大写/小写过應程序以读取命令	
+#include "apue.h"
+#include <sys/wait.h>
+int
+main (void)
+{
+char line[MAXLINE]；
+FILE *fpin；
+if ((fpin = popen("myuclc”， "r")) =* NULL)
+err—sys("popen error")；
+for ( ; ; ) {
+fputs("prompt> ", stdout)；
+fflush(stdout)；
+if (fgets(line, MAXLINE, fpin)
+break；
+if (fputs(line, 9tdout) EOF)
+err_sys(Mfputs error to pipe")
+} _
+if (pclose(fpin) == -1)
+err 一sys(”pclose error");
+putchar(#\n#)；
+exit(0);
+}
+NULL) /★ read from pipe
+因为标准输出通常是行缓冲的，而提示并不包含换行符，所以在写了提示之后，需要调用
+fflush0	口
+15.4协同进程
+UNIX系统过滤程序从标准输入读取数据，对其进行适当处理后写到标准输出。几个过滤
+
+ 
+15.4协同进程 409
+程序通常在shell管道命令行中线性地连接。当一个程序产生某个过滤程序的输入，同时又读取 该过滤程序的输出时，则该过滤程序就成为协同进程(coprocess)。
+Korn shell提供了协同进程[Bolsky and Korn 1995]。Bourne shell, Boume-again shell和C shell并没有提供按协同进程方式将进程连接起来的方法。协同进程通常在shell的后台运行，其 标准输入和标准输出通过管道连接到另一个程序。虽然初始化一个协同进程并将其输入和输出 连接到另一个进程，用到的shell语法是十分奇特的(详细情况见Bolsky和Korn[1995]中的第 62~63页)，但是协同进程的工作方式在C程序中也是非常有用的。
+popen只提供连接到另一个进程的标准输入或标准输出的一个单向管道，而对于协同进程,
+则它有连接到另一个进程的两个单向管道	个接到其标准输入，另一个则来自其标准输出。
+我们先要将数据写到其标准输入，经其处理后，再从其标准输出读取数据。
+ 
+让我们通过一个实例来观察协同进程。进程先创建两个管道：一个是协同进程的标准输入， 另一个是协同进程的标准输出。图15-8显示了这种安排。
+父进程	子进程(协同进程)
+	管道1	stdin
+		
+fd2[0]		stdout
+	管道2	
+图15-8写协同进程的标准输入，读它的标准输出
+程序清单15-8程序是一个简单的协同进程，它从其标准输入读两个数，计算它们的和，然 后将结果写至标准输出。(协同进程通常会做较此更有意义的工作。设计本实例的目的是帮助 了解将进程连接起来所需的各种管道设施。)
+	程序清单15-8对两个数求和的简单过滤程序	
+#include "apue.h" int
+main (void)
+{
+int n, inti, int2； char line[MAXLINE]；
+while ((n = read(STDIN_FILEN0, line, MAXLINE)) > o) { line[n] =0;	/* null terminate */
+if (sscanf(line, M%d%dM # &intl# &int2) « 2) { sprintf(line, n%d\n"f inti + int2)； n = strlen(line)；
+if (write(STDOUT^PILENO, line, n) !: n) err—sys("write error")；
+} else {
+if (write(STD0UT_FILEN0, "invalid args\n", 13) != 13) err—sys("write error")；
+exit(0)；
+
+ 
+410 第15章进程间通信
+对此程序进行编译，将其可执行目标代码存入名为add2的文件。
+程序清单15-9从其标准输入读入两个数之后调用add2协同进程，并将协同进程送来的值写 到其标准输出。
+程序清单15-9驱动add2过滤程序的程序
+#include ”apue.h"
+static void sig_pipe(int)
+int
+main(void)
+/* our signal handler */
+int n, fdl[2]• fd2[2]; pid_t pid; char line[MAXLINE]；
+if (signal(SIGPIPE, sig_pipe) == SIG_ERR) err—sys("signal error")；
+if (pipe(fdl) < 0 || pipe(fd2) < 0) err 一sys("pipe error")；
+if ((pid = fork()) < 0) { err—sys("fork error")；
+} else if (pid > 0) {	/* parent */
+close(fdl [0])； close(fd2[1])；
+while (fgets(line, MAXLINE, stdin) != NULL) { n = strlen(line)； if (write(fdl[1], line, n) 1= n)
+err一sys ("write error to pipe”； if ((n = read(fd2[0], line, MAXLINE)) < 0) err_sys ("read error from pipe”； if (n == 0) {
+err_msg(Mchild closed pipe"); break;
+}
+line[n] = 0? /* null terminate */ if (fputs(line, stdout) *= EOF) err—sys("fputs error")；
+if (ferror(stdin))
+err—sys("fgets error on stdin"}; exit(0);
+else {	/* child */
+close(fdl[1】)； close(fd2[0])；
+if (fdl[0] != STDIN 一FILENO) {
+if (dup2(fdl[0]7 STDIN_FILEN0) != STDIN—FILENO) err—sys ("dup2 error to stdin”； close(fdl[0] )?
+if (fd2[l] != STDOUT一FILENO) {
+if (dup2(fd2[1], STDOUT一FILENO) 1* STDOUT_FILENO) err_sys("dup2 error to stdout")； close(fd2[1])；
+}
+if (execl (” •/add2", nadd2ft, (char *) 0) < 0)
+
+ 
+15.4协同进程 411
+err_sys (ff execl error"); } _ exit(0)；
+}
+static void sig_pipe(int signo)
+{
+printf("SIGPIPE caught\n")； exit(1);
+在程序中创建了两个管道，父、子进程各自关闭它们不需使用的端口。两个管道一个用做 协同进程的标准输入，另一个则用做它的标准输出。子进程调用dup2使管道描述符移至其标 准输入和标准输出，然后调用execl。
+若编译和运行程序清单15-9程序，它如所希望的那样进行工作。进而言之，在程序正等待 输入时，若先杀死add2协同进程，然后输入两个数，接着程序对管道进行写操作，此时，由 于该管道已无读进程，于是调用信号处理程序(见习题15.4)。
+回忆表15-1,并非所有系统用pipe函数提供全双工管道。程序清单17-1将提供这一实 例的另一个版本，它使用一个全双工管道而不是两个半双工管道，适用于支持全双工管道的 系统。	口
+在协同进程add2 (见程序清单15-8)中，有意地使用了read和writel/O (UNIX系统 调用)。如果使用标准I/O改写该协同进程，其后果是什么呢？程序清单15-10就是改写后的 版本。
+	程序清单15-10对两个数求和的滤波程序，使用标准I/O	
+#include ,fapue.h11
+int
+main(void)
+{
+int inti, int2； char line[MAXLINE];
+while (fgets(line, MAXLINE, stdin) != NULL) {
+if (sscanf(line, "%d%dn, &intl# &int2) =* 2) { if (printf(H%d\n", inti + int2) == EOF) err一sys("printf error")；
+} else {
+if (printf("invalid args\n") == EOF) err_sys("printf error")；
+} _
+}
+exit(0)；
+}
+若程序清单15-9调用此新的协同进程，则它不再工作。问题出在系统默认的标准I/O缓冲机 制上。当调用程序清单15-10所示程序时，对标准输入的第一个fgets引起标准I/O库分配一个 缓冲区，并选择缓冲区的类型。因为标准输入是个管道，所以标准I/O库由系统默认是全缓冲的。
+
+ 
+412 第15章进程间通信
+对标准输出也作同样的处理。当add2从其标准输入读取而发生阻塞时，程序清单15-9程序从管 道读时也发生阻塞，于是#生了死锁。
+为此，更改将要运行的协同进程的缓冲类型，在程序清单15-10中的while循环之前加上 下面4行：
+if (setvbuf(stdin, NULL, 一IOLBF, 0) 1= 0) err—sys("setvbuf error")； if (setvbuf(stdout, NULL, _IOLBF, 0) != 0) errsys("setvbuf error")；
+这些代码行使得当有4右可用时，fgets就返回，并使得当输出一换行符时，printf立即执 行fflush操作。对setvbuf进行的这些显式调用使得程序15-10能正常工作。
+如果不能修改这种协同进程程序，则需使用其他技术。例如，如果在程序中使用aWk(l)代 替add2作为协同进程，则下列命令行不能工作，
+#! /bin/awk -f { print $1 + $2 }
+不能工作的原因还是标准I/O的缓冲机制问题。但是，在这种情况下不能改变awk的工作方 式(除非有awk的源代码)。我们不能修改awk的可执行代码，于是也就不能更改处理其标准 I/O缓冲的方式。
+对这种问题的一般解决方法是使被调用的协同进程(在本例中是awk)认为它的标准输入 和输出都被连接到一个终端。这使得协同进程中的标准I/O例程对这两个I/O流进行行缓冲，这 类似于前面所做的显式setvbuf调用。第19章将用伪终端实现这一点。	口
+15.5	FIFO
+FIFO有时被称为命名管道。管道只能由相关进程使用，这些相关进程的共同的祖先进程创 建了管道。(一个例外是已装配的基于STREAMS的管道，我们将在17.2.2中对此进行说明。)但 是，通过FIFO,不相关的进程也能交换数据。
+第4章中已经提及FIFO是一种文件类型。stat结构(见4.2节)成员St_mode的编码指明 文件是否是FIFO类型。可以用S_ISFIF0宏对此进行测试。
+创建FIFO类似于创建文件。确实，FIFO的路径名存在于文件系统中。
+#include <sys/stat.h>
+int mkf ifo (const char *pathname, mode t mode)；
+返回值：若成功则返回0,若出错则返回-1 ■
+mkfifo函数中zntw/e参数的规格说明与open函数中的zntw/e相同(见3.3节)。新FIFO的用户和 组的所有权规则与4.6节所述的相同。
+-旦已经用mkfifo创建了一个FIFO,就可用open打开它。其实，一般的文件I/O函数 (close、read、write, unlink等)都可用于FIFO。
+应用程序可以用mknod函数创建FIFO。POSIX.I原先并没有包括mknod函数，它首先提出了 mkf ifo。mknod现在已包括在XSLT展中。在大多数系统中，mkf ifo调用mknod创建FIFO
+
+ 
+15.5 FIFO 413
+POSIX.I也包括了对mkfifo(l)命令的支持。本书讨论的四种平台都支持此命令。于是，用一条 shell命令就可以创建一个FIFO,然后用一般的shelll/O重定向对其进fr访问。
+当打开一个FIFO时，非阻塞标志(0_N0NBL0CK)产生下列影响：
+•在一般情况中(没有指定0_N0NBL0CK)，只读open要阻塞到某个其他进程为写而打开 此FIFO。类似地，只写open要阻塞到某个其他进程为读而打开它。
+•如果指定了0_NONBLOCK，则只读open立即返回。但是，如果没有进程已经为读而打开 一个FIFO,那么只写open将出错返回-1,其errno是ENXIO。
+类似于管道，若用write写一个尚无进程为读而打开的FIFO，则产生信号SIGPIPE。若某个 FIFO的最后一个写进程关闭了该FIFO,则将为该FIFO的读进程产生一个文件结束标志。
+一个给定的FIFO有多个写进程是很常见的。这就意味着如果不希望多个进程所写的数据互 相穿插，则需考虑原子写操作。(在17.2.2节中将说明解决此问题的一种方法。)正如对于管道 一样，常量PIPE_BUF说明了可被原子地写到FIFO的最大数据量。
+FIFO有下面两种用途：
+(1)	FIFO由shell命令使用以便将数据从一条管道线传送到另一条，为此无需创建中间临时 文件。
+(2)	FIFO用于客户进程-服务器进程应用程序中，以在客户进程和服务器进程之间传递数据。 我们各用一个例子来说明这两种用途。
+实例：用FIFO复$»蜱出流
+HFO可被用于复制串行管道命令之间的输出流，于是也就不需要写数据到中间磁盘文件中 (类似于使用管道以避免中间磁盘文件)。管道只能用于进程间的线性连接，然而，因为FIFO具 有名字，所以它可用于非线性连接。
+考虑这样一个操作过程，它需要对一个经过过滤的输入流进行两次处理。图15-9表示了这 种安排。
+入件 输文
+图15-9对一个经过过滤的输人流进行两次处理
+使用FIFO以及UNIX系统程序tee(l),就可以实现这样的过程而无需使用临时文件。(tee 程序将其标准输入同时复制到其标准输出以及其命令行中包含的命名文件中。)
+mkfifo fifol prog3 < fifol &
+progl < infile | tee fifol | prog2
+我们创建FIFO，然后在后台启动prog3，它从FIFO读数据。然后启动progl，用tee将其输出 发送到FIFO和prog2。图15-10显示了有关安排。
+
+ 
+414 第15章进程间通信
+ 
+图15-10使用FIFO和tee将一个流发送到两个进程	□
+实例：客户进程-服务器进程使用FIFO进行通信
+FIFO的另一个应用是在客户进程和服务器进程之间传送数据。如果有一个服务器进程，它 与很多客户进程有关，则毎个客户进程都可将其请求写到一个该服务器进程创建的众所周知的 FIFO中(“^所周知”的意思是：所有需与服务器进程联系的客户进程都知道该FIFO的路径名)。 图15-11显示了这种安排。因为对于该FIFO有多个写进程，客户进程发送给服务器进程的请求 _其长度要小于PIPE_BUF字节。这样就能避免客户多fwrite之间的交错。
+在这种类型的客户进程-服务器进程通信中使用FIFO的问题是：服务器进程如何将回答送 回各个客户进程。不能使用单个FIFO,因为服务器进程会发出对各个客户进程请求的响应，而 请求者却不可能知道什么时候去读才能恰如其分地读到对它的响应。一种解决方法是毎个客户 进程都在其请求中包含它的进程ID。然后服务器进程为毎个客户进程创建一个FIFO,所使用的 路径名是以客户进程的进程ID为基础的。例如，服务器进程可以用名字/tmp/servl.XXXXX 创建FIFO,其中XXXXX被替换成客户进程的进程ID。图15-12显示了这种安排。
+ 
+__	图15-11客户进程用FIFO向	图15-12客户进程-服务器进程用FIFO进行通信
+岡	服务器进程发送请求
+这种安排可以工作，但也有一些不足之处。其中之一是服务器进程不能判断一个客户进程 是否崩溃终止，这就使得客户进程专用的FIFO会遗留在文件系统中。另一个不足之处是服务器 进程必须捕捉SIGPIPE信号，因为客户进程在发送一个请求后没有读取响应就可能终止，于是 留下一个只有写进程(服务器进程)而无读进程的客户进程专用FIFO。在17.2.2节中我们将讨 论已装配的基于STREAMS的管道以及connld，那时会说明解决此种问题更加妥善的方法。 按照图15-12中的安排’如果服务器进程以只读方式打开众所周知的FIFO (因为它只需读
+
+ 
+15.6 XSI IPC 415
+该FIFO),则毎当客户进程数从1变成0时，服务器进程就将在FIFO中读到一个文件结束标记。 为使服务器进程免于处理这种情况，一种常用的技巧是使服务器进程以读-写方式打开其FIFO (见习题15.10)。	口
+15.6	XSI IPC
+有三种IPC我们称作XSI IPC，即消息队列、信号量以及共享存储器，它们之间有很多相似 之处。以下各节将说明这些IPC的各自特殊功能，本节先介绍它们相类似的特征。
+XSI IPC源自系统V的IPC功能，二者密切相关。后者源自于1970年的一种称为Columbus UNIX的 AT&T内部版本，后来它们被加到系统V上。由于XSI丨PC不使用文件系统名字空间.而是构造了它们 自己的名字空间，为此常常受到批评。
+回亿表15-1,消息队列、信号量及共享存储器定义在Smgfe UNIX Specification的XSI扩展中。
+15.6.1标识符和键
+毎个内核中的IPC结构(消息队列、信号量或共享存储段)都用一个非负整数的标识符 (identifier)加以引用。例如，为了对一个消息队列发送或取消息，只需要知道其队列标识符。 与文件描述符不同，IPC标识符不是小的整数。当一个IPC结构被创建，以后又被删除时，与这 种结构相关的标识符连续加1,直至达到一个整型数的最大正值，然后又回转到0。
+标识符是IPC对象的内部名。为使多个合作进程能够在同一IPC对象上会合，需要提供一个 外部名方案。为此使用了键(key),毎个IPC对象都与一个键相关联，于是键就用作为该对象 的外部名。
+无论何时创建IPC结构(调用msgget、semget或shmget),都应指定一个键，键的数据 类型是基本系统数据类型key_t，通常在头文件<SyS/typeS.h>中被定义为长整型。键由内 核变换成标识符。
+有多种方法使客户进程和服务器进程在同一 IPC结构上会合：
+⑴服务器进程可以指定键IPC_PRIVATE创建•个新IPC结构，将返回的标识符存放在某 处(例如一个文件)以便客户进程取用。键IPC_PRIVATE保证服务器进程创建-个新IPC结构。 这种技术的缺点是：服务器进程要将整型标识符写到文件中，此后客户进程又要读文件取得此 标识符。
+IPC_PRIVATF键也可用于父、子进程关系。父进程指定IPC_PRIVATE创建一个新IPC结 构，所返回的标识符在调用fork后可由子进程使用。接着，子进程又可将此标识符作为exec 函数的-个参数传给一个新程序。
+(2)	在一个公用头文件中定义一个客户进程和服务器进程都认可的键。然后服务器进程指 定此键创建一个新的IPC结构。这种方法的问题是该键可能已与一个IPC结构相结合，在此情况 下，get函数(msgget、semget或shmget)出错返回。服务器进程必须处理这一错误，删 除已存在的IPC结构，然后试着再创建它。
+(3)	客户进程和服务器进程认同一个路径名和项目ID	(项目ID是0~255之间的字符值)，接 着调用函数ftok将这两个值变换为一个键。然后在方法(2)中使用此键。ftok提供的唯一服务 就是由一个路径名和项目ID产生一个键。
+
+ 
+416 第15章进程间通信
+owner's effective user id */
+owner,s effective group id */
+creatorf s effective user id */
+creator's effective group id */
+access modes */
+毎种实现在其ipc_perin结构中会包括另外一些成员。如欲了解你所用系统中它的完整定义， 请参见< sys/ipc.h>0
+在创建IPC结构时，对所有字段都賦初值。以后，可以调用msgctl、semctl或shmctl 修改uid、gid和mode字段。为了改变这些值，调用进程必须是IPC结构的创建者或超级用户。 更改这些字段类似于对文件调用chown和chmod。
+mode字段的值类似于表4-5中所示的值，但是对于任何IPC结构都不存在执行权限。另外,
+
+#include <sys/ipc.h>
+key_t ftok(const char *path, int id)；
+返回值：若成功则返回键，若出错则返回(key_t)-1
+pa伙参数必须引用一个现存文件。当产生键时，只使用W参数的低8位。 ftok创建的键通常是用下列方式构成的：按给定的路径名取得其stat结构(见4.2节)， 从该结构中取出部分st_dev和St_ino字段，然后再与项目ID组合起来。如果两个路径名引用 两个不间的文件，那么，对这两个路径名调用ftok通常返回不间的键。但是，因为i节点号和 键通常都存放在长整型中，于是创建键时可能会丢失信息。这意味着，如果使用同一项目ID, 那么对于不间文件的两个路径名可能产生相间的键。
+三个get函数(msgget、semget和shmget)都有两个类似的参数：一个key和一个整型 flag。如若满足下列两个条件之一，则创建一个新的IPC结构(通常由服务器进程创建)：
+•	Jkey 是 IPC 一 PRIVATE,
+•	&：y当前未与特定类型的IPC结构相结合，并旦/Zflg中指定了IPC_CREAT位。
+为访问现存的队列(通常由客户进程进行)，必须等于创建该队列时所指定的键，并且不应 指定 IPC_CREAT0
+注意，为了访问一个现存队列，决不能指定IPC_PRIVATE作为键。因为这是一个特殊的 键值，它总是用于创建一个新队列。为了访问一个用IPC_PRIVATE键创建的现存队列，一定 要知道与该队列相结合的标识符，然后在其他IPC调用中(例如msgsnd和msgrcv)使用该标 识符。
+如果希望创建一个新的IPC结构，而且要确保不是引用具有间一标识符的一个现行IPC结构， 那么必须在/1叩中同时指定IPC_CREAT和IPC—EXCL位。这样做了以后，如果IPC结构已经存 在就会造成出错，返回EEXIST (这与指定了0_CREAT和0_EXCL标志的open相类似)。
+15.6.2权限结构
+XSI IPC为毎一个IPC结构设置了一个ipC_perm结构。该结构规定了权限和所有者。它至 少包括下列成员：
+truct ipc_perm { uid—t uid； /* gid—t gid； /* uid—t cuid； /* gid__t eg id； /* mode一t mode； /*
+ 
+15.6 XSI IPC 417
+消息队列和共享存储使用术语读(read)和写(write),而信号量则用术语读(rend)和更改 (alter)。表15-2中对每种IPC说明了6种权限。
+表15-2 XSMPC权限
+权限	位 i
+用户读	0400
+用户写(更改)	0200
+组读	0040
+组写(更改)	0020
+其他读	0004
+其他写(更新)	0002
+某些实现定义了表示每种权限的符号常量，但是这些常量并不包括在Single UNIX Specification 中。
+15.6.3结构限制
+三种形式的XSI IPC都有内置限制(built-in limit)。这些限制的大多数可以通过重新配置内 核而加以更改。当叙说每种IPC时，我们都会指出它的限制。
+在报告和修改限制方面，每种平台都提供它自己的方法。FreeBSD 5_2.1、Linux 2.4.22和Mac OS X 10.3提供了 sysctl今令，用该命令观察和修改内核fc置参数。Solaris9修改内核fc置参数的方法是， 修改文件/etc/system,然后重启动。
+在Linux中，你可以运行ipcs -1以显示IPC相关的限制。在FreeBSD中，等效的命令是ipcs -T。 在Solaris中，运行sysdef -i则可找到可调节参数。
+15.6.4优点和缺点
+XSI IPC的主要问题是：IPC结构是在系统范围内起作用的，没有访问计数。例如，如果进 程创建了一个消息队列，在该队列中放入了几则消息，然后终止，但是该消息队列及其内容并 不会被删除。它们余留在系统中直至出现下述情况：由某个进程调用msgrcv或msgctl读消息 或删除消息队列，或某个进程执行ipcrm(l)命令删除消息队列，或由正在再启动的系统删除消 息队列。将此与管道相比，当最后一个访问管道的进程终止时，管道就被完全地删除了。对于 FIFO而言，虽然当最后一个引用FIFO的进程终止时其名字仍保留在系统中，直至显式地删除 它，但是留在HFO中的数据却在此时全部被删除，于是也就徒有其名了。
+XSI IPC的另一个问题是：这些IPC结构在文件系统中没有名字。我们不能用第3、第4章中 所述的函数来访问它们或修改它们的特性。为了支持它们不得不增加了十几条全新的系统调用 (msgget、semop、shmat等)。我们不能用Is命令见到IPC对象，不能用rm命今删除它们， 也不能币chmod命令更改它们的访问权限。干是，就不得不增加新的命令ipcs(l)和 ipcrm(l)。
+因为这些IPC不使用文件描述符，所以不能对它们使用多路转接I/O函数：select和poll。 这就使得难于一次使用多个IPC结构，以及在文件或设备I/O中使用IPC结构。例如，没有某种 形式的忙-等待循环，就不能使一个服务器进程等待将要放在两个消息队列任一个中的消息。
+國
+
+ 
+418 第15幸进程间通信
+Andrade、Carges和Kovach[1989]对使用系统V丨PC的一个事务处理系统进行了综述。他们 认为系统V IPC使用的名字空间(标识符)是一个优点而不是前面所说的问题，理由是使用标 识符使一个进程只要使用单个函数调用(msgsnd)就能将一个消息发送到一个消息队列，而 其他形式的IPC则通常要求open、write和close。这种论点是错误的。为了避免使用键和调 用msgget,客户进程总要以某种方式获得服务器进程队列的标识符。分派给特定队列的标识 符，取决于在创建该队列时有多少消息队列已经存在，也取决于自内核自举以来，内核中将分 配给新队列的表项已经使用了多少次。这是一个动态值，不能被猜出或事先存放在一个头文件 中。正如15.6.1节所述，至少服务器进程应将分配给队列的标识符写到一个文件中以便客户进 程读取。
+这些作者列举的消息队列的其他优点是：(a)可靠，(b)流是受控的，(c)面向记录，(d)可 以用非先进先出方式处理。正如在14.4节中所见，STREAMS也具有所有这些优点，两者之间 的差别是，在向流发送数据之前需要一个open,在结束时需要一个close。表15-3对这些不同 形式IPC的某些特征进行了比较。
+表15-3不同形式IPC之间的特征比较
+IPC类型	无连接？	可靠？	流控制？	记录？	消息类型或优先级？
+消息队列	否	是	I 是	是	是
+STREAMS	否	是	是	是	是
+UNIX域流套接字	否	是	是	否	否
+UNIX域数据报套接字	是	是	否	是	否
+FIFO (非STREAMS)	否	是	是	否	否
+(第16章将对UNIX流和数据报套接字进行说明。17.3节将说明UNIX域套接字。)表15-3 中的“无连接”指的是无需先调用某种形式的打开函数就能发送消息的能力。正如前述，因 为需要有某种技术以获得队列标识符，所以我们并不认为消息队列具有无连接特性。因为所 有这些形式的IPC都限制用在单主机上，所以它们都是可靠的。当消息通过网络传送时，丢 失消息的可能性就要加以考虑。“流控制”指的是：如果系统资源(缓冲区)短缺或者如果 接收进程不能再接收更多消息，则发送进程就要休眠。当流控制条件消失时，发送进程应自 动地被唤醒。
+表15-3中没有表示的一个特征是：IPC设施能否自动地为每个客户进程创建一个到服务器 进程的唯一连接。第17章将说明’ STREAMS以及UNIX流套接字可以提供这种能力。
+下面三节顺次对三种形式的XSI IPC进行详细说明。
+15.7消息队列
+消息队列是消息的链接表，存放在内核中并由消息队列标识符标识。在本节中，我们把消息 队列简称为队列(queue),其标识符为队列ID (queue ID)。
+Single UNIX Specification在其实时扩展的消息传送选项中包括一种替代的IPC消息队列本书不 讨论实时扩展
+msgget用于创建一个新队列或打开一个现存的队列。msgsnd将新消息添加到队列尾端。 每个消息包含一个正长整型类型字段，一个非负长度以及实阮数据字节(对应于长度)，所有
+
+ 
+15.7消息队列 419
+这些都在将消息添加到队列时，传送给msgsnd。msgrcv用于从队列中取消息。我们并不一定 要以先进先出次序取消息，也可以按消息的类型字段取消息。
+每个队列都有一个msqid—ds结构与其相关联：
+struct msqid一ds
+struct ipc_perm	msg_perm；	/*
+msgqnum_t	msg_qnum；	/*
+msglen_t	msg—qbytes；	/*
+pid一 t	msg_lspid；	/*
+pid_t	msg__lrpid；	/*
+time_t	msg_stime；	/*
+time 一 t	msg_rtime；	/*
+time_t	msg_ctime；	/*
+/* see Section 15.6.2 */
+# of messages on queue */ max # of bytes on queue */ pid of last msgsnd() */ pid of last msgrcv{) */ last-msgsnd() time */ last-msgrcv() time */ last-change time */
+此结构规定了队列的当前状态。结构中所示的各成员是由Single UNIX Specification定义的。具 体实现可能包括标准中没有定义的另一些字段。
+表15-4列出了影响消息队列的系统限制。表中“notsup”表示相关平台不支持该特征， “derived”表示这种限制是从其他限制导出的。例如，在Linux系统中，消息最大数基于队列最 大数值和队列中允许数据量的最大值。如果最短消息长度是1字节，则系统范围内的消息数限 制是最大消息队列数x队列的最大长度(字节)。按表15-4中给出的数据，Linux默认配置的最 大消息数(系统范围内)是262 144。(即使一个消息可能包含0字节数据，Linux也将其处理为 如同包含1字节那样，其目的是限制队列中的消息数。)
+表15-4影响消息队列的系统限制
+说明	典型值
+	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+可发送最长消息的卞节数
+一个特定队列的最大字节数(亦即队列中所有消息之和) 系统中最大消息队列数 系统中最大消息数	16 384 2 048 40 40	8 192 16 384 16
+derived	notsup
+notsup
+notsup
+notsup	2 048 4096 50 40
+回忆表15-1, Mac OS X 10.3不支持XSI消息队列。因为Mac OS X部分地基于FreeBSD.而 FreeBSD支持消息队列，所以使Mac OS X支持消息队列是有可能的。碲实，一个良好的因特网搜索引 擎将提供指针，指向Max OS X的XSm息队列的第三方端口 .
+调用的第一个函数通常是msgget,其功能是打开一个现存队列或创建一个新队列。
+#include <sys/msg.h>
+int msgget (key一t key, int flag);
+返回值：若成功则返回消息队列ID,若出错则返回-1
+15.6.1节说明了将变换成一个标识符的规则，并且讨论是否创建一个新队列或访问一个现存 队列。当创建一个新队列时，初始化msqid—ds结构的下列成员：
+•	ipc_perm结构按15.6.2节中所述进行初始化。该结构中mode成员按/Zag中的相应权限位
+
+ 
+420 第15章进程间通信
+设置。这些权限用表15-2中的常量指定。
+•msg—gnum、msg_lspid、msg一lrpid、msg_stime和msg_rtime都设置为0。 •msg_ctime设置为当前时间。
+•	msg—gbytes设置为系统限制值。
+若执行成功，msgget返回非负队列ID。此后，该值就可被用于其他三个消息队列函数。
+msgctl函数对队列执行多种操作。它和另外两个与信号量和共享存储有关的函数 (semctl和shmctl)是XSI IPC的类似于ioctl的函数(亦即垃圾桶函数)。
+#include <sys/msg.h>
+int msgctl {int mscjid, int cmd, struct msqid_ds *buf)；
+返回值：若成功则返回0.若出错则返回-1
+参数说明对由指定的队列要执行的命令：
+IPC_STAT取此队列的msgid_ds结构，并将它存放在如/指向的结构中。
+IPC_SET 按由fcM/指向结构中的值，设置与此队列相关结构中的下列四个字段： msg_perm-uid、msg^perm.gid、msg_per^l•^lode和msg一qbytesC)此 命令只能由下列两种进程执行：一种是其有效用户ID等于msg_perm. cuid 或msg_perm.uid,另一种是具有超级用户特权的进程。只有超级用户才能 增加msg_qbytes的值。
+IPC一RMID从系统中删除该消息队列以及仍在该队列中的所有数据。这种删除立即生效。
+仍在使用这一消息队列的其他进程在它们下一次试图对此队列进行操作时，将 出错返回EIDRM。此命令只能由下列两种进程执行：一种是其有效用户ID等于 msg_perm.cuid或msg_perm.uid,另一种是具有超级用户特权的进程。 这三条命令(IPC—STAT、IPC_SET和IPC_RMID)也可用于信号量和共享存储。
+调用msgsnd将数据放到消息队列中。
+#include <sys/msg.h>
+int msgsnd {int msqid, const void *ptr, size_t tibytes, int flag);
+返回值：若成功则返回0，若出错则返回-】
+正如前面提及的，每个消息都由三部分组成，它们是：正长整型类型字段、非负长度(nbytes) 以及实阮数据字节(对应于长度)。消息总是放在队列尾端。
+■参数指向一个长整型数，它包含了正的整型消息类型，在其后紧跟着消息数据。(若 nbytes^O,则无消息数据。)若发送的最长消息是512字节，则可定义下列结构：
+struct mymesg {
+long mtype；	/* positive message type */
+char mtext [512] ； /* message data, of length nbytes */
+于是，pr就是一个指向1^1^39结构的指针。接收者可以使用消息类型以非先进先出的次序取 消息。
+某些平台既支持32位环境，又支持64位环境。这影响到长整型和指针的大小。例如，在64位 SPARC系统中，Solaris允许32位和64位应用同时存在。如果一个32位应用经由管道戈套接字要与64位
+
+ 
+15.7消息队列 421
+应用交换此结构，那幺，因为在32位应用中，长整型的大小是4字节，而在64位应用中.长整型的大小 是8字节，这就造成了问题。这意味着，32位应用期望mtext字段在结构起始地址后的第4个字节处开 始，而64位应用则期望mtext字段在结构起始地址后的第8个字节处开始。在这种情况下，64位应用的 mtype字段的一部分会被32位应用视为mtext字段的组成部分，而32位应用的mtext字段的头4个字节 会破64位应用解释为mtype字段的组成部分„
+但是，对XSI消息队列而言，这种问题是不会出现的。Solaris实现IPC系统调用的32位版本和64位 版本，但两者的入口点不同。这些系统调用知道如何处理32位应用与64位应用的通信操作，并对类型 字段作特殊处理以避免它干扰消息的数极部分。唯一可能出问题的是，当64位应用向32位应用发送一 消息时，如果它在8字节类型字段*设置的值大于32位应用中4字节类型字段可表示的值，那幺32位应 用在其mtype字段中得到的是一个截短了的值，于是也就丢失了信息。
+参数/7叹的值可以指定为IPC_NOWAIT。这类似于文件I/O的非阻塞I/O标志(见14.2节)。 若消息队列已满(或者是队列中的消息总数等于系统限制值，或队列中的字节总数等于系统限 制值)，则指定IPC_NOWAIT使得msgsnd立即出错返回EAGAIN。如果没有指定IPC_NOWAIT， 则进程阻塞直到下述情况出现为止：有空间可以容纳要发送的消息，从系统中删除了此队列， 或捕捉到一个信号，井从信号处理程序返回。在第二种情况下，返回EIDRM (“标识符被删除”)。 最后一种情况则返回EINTR。
+注意，对删除消息队列的处理不是很完善。因为对每个消息队列并没有设置一个引用计数 器(对打开文件则有这种计数器)，所以删除一个队列会造成仍在使用这一队列的进程在下次 对队列进行操作时出错返回。信号量机制也以同样方式处理其删除。相反，删除一个文件时， 要等到使用该文件的最后一个进程关闭了它的文件描述符后，才能删除文件中的内容。
+当msgsnd成功返回，与消息队列相关的msgid_ds结构得到更新，以标明发出该调用的 进程ID (msg.lspid),进行该调用的时间(msg_stime),并指示队列中增加了一条消息 (msg-qnum)0
+msgrcv从队列中取用消息：
+#include <sys/msg.h>
+ssize_t msgrcv(int msqid, void *ptrf size一t nbytes• long type, int flag)；
+返回值：若成功则返回消息的数据部分的长度，若出错则返回-1
+如同msgsnd中一样，pfr参数指向一个长整型数(返回的消息类型存放在其中)，跟随其后的是 存放实际消息数据的缓冲区。兑明数据缓冲区的长度。若返回的消息大于而且在 刀叫中设置了MSG_NOERROR,则该消息被截短。(在这种情况下，不通知我们消息截短了，消 息的截去部分被丢弃。)如果没有设置这一标志，而消息又太长，则出错返回E2BIG (消息仍 留在队列中)。
+参数07^使我们可以指定想要哪一种消息：
+type == 0返回队列中的第一个消息。
+type> 0 返回队列中消息类型为ryw的第一个消息。
+type< 0 返回队列中消息类型值小于或等干07^绝对值的消息，如果这种消息有若干个， 则取类型值最小的消息。
+直非0用于以非先进先出次序读消息。例如，若应用程序对消息赋优先权，那么0^就
+
+ 
+422 第15幸进程间通信
+可以是优先权值。如果一个消息队列由多个客户进程和一个服务器进程使用，那么字段可 以用来包含客户进程的进程ID (只要进程ID可以存放在长整型中)。
+可以指定//叹值为IPC_NOWAIT，使操作不阻塞。这使得如果没有所指定类型的消息，则 msgrcv返回-1, errno设置为ENOMSG。如果没有指定IPC_NOWAIT，则进程阻塞直至如下 情况出现才终止：有了指定类型的消息，从系统中删除了此队列(出错则返回-1且errno置为 EIDRM),或捕捉到一个信号并从信号处理程序返回(msgrcv返回-1， errno设置为 EINTR)。
+msgrcv成功执行时，内核更新与该消息队列相关联的msgid_ds结构，以指示调用者的 [HH进程ID (msg—lrpid)和调用时间(msg_rtime),并将队列中的消息数(msg_qnum)减1。
+实例：消息队列与流管道的耗时比较
+如若需要客户进程和服务器进程之间的双向数据流，可以使用消息队列或全双工管道。 (回忆表15_1，通过UNIX域套接字机制(17.3节)，全双工管道是可用的，而某些平台通过 pipe函数提供全双工管道。)
+表15-5显示了在Solaris上三种技术在时间方面的比较，这三种技术是：消息队列、基于 STREAMS的管道和UNIX域套接字。测试程序先创建IPC通道，调用fork,然后从父进程向子 进程发送约200MB数据。数据发送的方式是：对于消息队列，调用lOOOOC^msgsnd，每个消 息长度为2 000字节，对于基于STREAMS的管道，调用100 000次write,每次写2 000字节。 时间都以秒为单位。
+表15-5在Solaris上三种IPC的时间比较
+操作	用 户	系统	时钟
+消息队列	0.57	3.63	4.22
+STREAMS 管道	0.50	3.21	3.71
+UNIX域套接字	0.43	4.45	5.59
+从这些数字中可见，消息队列原来的实施目的是提供比一般IPC更髙速度的进程通信方法， 但现在与其他形式的IPC相比，在速度方面已经没有什么差别了(事实上，基于STREAMS的管道 快于消息队列)。(在原来实施消息队列时，唯一的其他形式IPC是半双工管道。)考虑到使用消息 队列具有的问题(见15.6.4节)，我们得出的结论是，在新的应用程序中不应当再使用它们.□
+15.8信号量
+信号量(semaphore)与已经介绍过的IPC机构(管道、FIFO以及消息列队)不同。它是一 个计数器，用于多进程对共享数据对象的访问。
+Single UNIX Specification在其实时扩展的信号量选项中，包括了信号量接口的替代集。本书不讨 论这种接口。
+为了获得共享资源，进程需要执行下列操作：
+(1)	测试控制该资源的信号量。
+(2)	若此信号量的值为正，则进程可以使用该资源。进程将信号量值减1，表示它使用了一 个资源单位。
+
+ 
+15.8信号量 423
+see Section 15.6.2 */
+#	of semaphores in set */ last-semop() time */ last-change time */
+semaphore value, always >= 0 */ pid for last operation */
+#	processes awaiting semval>curval */
+#	processes awaiting semval==sO */
+\M
+struct {
+unsigned short	semval；
+pid_t	sempid；
+unsigned short	semncnt； unsigned short semzcnt；
+struct semid_ds {
+struct ipc_perm	sem_perm;
+unsigned short	sem_nsems;
+time_t	sem_otime；
+time t	sem ctime；
+Single UNIX Specification定义了上面所示的各字段，但是具体实现可在semid_ds结构中定义 添加的成员。
+每个信号量由一个无名结构表示，它至少包含下列成员：
+(3)	若此信号量的值为0，则进程进入休眠状态，直至信号量值大于0。进程被唤醒后，它 返回至第⑴步^	_
+当进程不再使用由一个信号量控制的共享资源时，该信号量值增1。如果有进程正在休眠 等待此信号量，则唤醒它们。
+为了正确地实现信号量，信号量值的测试及减1操作应当是原子操作。为此，信号量通常 是在内核中实现的。
+常用的信号量形式被称为二元信号量或双态信号量(binary semaphore)。它控制单个资源，
+初始值为1。但是一般而言，信号量的初值可以是任一正值，该值说明有多少个共享资源单位 可供共享应用。
+遗憾的是，XSI的信号量与此相比要复杂得多。三种特性造成了这种并非必要的复杂性：
+(1)	信号量并非是单个非负值，而必需将信号量定义为含有一个或多个信号量值的集合。
+当创建一个信号量时，要指定该集合中信号量值的数量。
+(2)	创建信号量(semget)与对其赋初值(semctl)分开。这是一个致命的弱点，因为 不能原子地创建一个信号量集合，并且对该集合中的各个信号量值陚初值。
+(3)	即使没有进程正在使用各种形式的XSI	IPC,它们仍然是存在的。有些程序在终止时并 没有释放已经分配给它的信号量，所以我们不得不为这种程序担心。下面将要说明的undo功 能就是假定要处理这种情况的。
+内核为每个信号量集合设置了一个semid_dS结构：
+表15-6列出了影响信号量集合的系统限制(见15.6.3节)。
+要获得一个信号量ID,要调用的第一个函数是seraget。
+#include <sys/sem.h>
+int semget (key—t key, int nsems, int flag)；
+返回值：若成功则返回信号量ID,若出错则返回-1
+/*
+"
+/*
+/*
+/*
+/*
+/*
+
+ 
+424 第15章进程间通信
+表15-6影响倍号量的系统限制
+说明		典型	值	
+	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+任一信号量的最大值	32 767	32 767	32 767	32 767
+任一信号量的最大的终止时调整值	16 384	32 767	16 384	16 384
+系统中信号量集的最大数	10	128	87 381	10
+系统中信号量的最大数	60	32 000	87 381	60
+每个信号量集中的最大信号量数	60	250	87 381	25
+系统中undo结构的最大数	30	32 000	87 381	30
+每个undo结构中的最大undo项数	10	32	10	10
+每个semop调用中的最大操作项数	100	32	100	10
+15.6.1节说明了将变换为标识符的规则，讨论了是否创建一个新集合，或是引用一个现 存的集合。创建一个新集合时，对semid_ds结构的下列成员陚初值：
+•按15_6_2节中所述，对ipc_perm结构陚初值。该结构中的mode被设置为/Zag中的相应权 限位。这些权限是用表15-2中的常量设置的。
+•	sem_otime 设置为 0。
+•sem 一c time设置为当前时间。
+•	sem_nsems设置为财6附。
+是该集合中的信号量数。如果是创建新集合(一般在服务器进程中)，则必须指定 Awe/zw。如果引用一个现存的集合(一个客户进程)，则将nm/w指定为0。 seme ti函数包含了多种信号量操作。
+#include <sys/sem.h>	
+int semctl (int semid, int semnum, int cmd, .../* union semun arg */)；	返回值：(见下)
+注意，依赖于所请求的命令，第四个参数是可选的，如果使用该参数，则其类型是semun,它 是多个特定命令参数的联合(union〉：
+union semun {
+int val； /* for SETVAL */	
+struct semid 一ds *buf； /* for IPC_STAT and IPC—SET */ unsigned short *array； /* for GETALL and SETALL */
+注意，这是一个联合，而非指向联合的指针。
+cmd参数指定下列10种命令中的一种，在指定的信号量集合上执行此命令。其中有5 条命令是针对一个特定的信号量值的，它们用semnMm指定该信号量集合中的一个成员。 semnum值在0和nsems-1之间(包括0和财例w-1)。
+IPC.STAT对此集合取semid_ds结构，并存放在由#指向的结构中。
+IPC一SET 按由•指向结构中的值设置与此集合相关结构中的下列三个字段值： sem_perm.uid, sem_perm.gid和sem_perm.mode。此命令只能由下列 两种进程执行：一种是其有效用户ID等于sem_perm . cuid或
+
+ 
+15.8信号量 425
+sem_perm.uid的进程;另一种是具有超级用户特权的进程。
+IPC_RMID从系统中删除该信号量集合。这种删除是立即发生的。仍在使用此信号量集 合的其他进程在它们下次试图对此信号量集合进行操作时，将出错返回 EIDRM。此命令只能由下列两种进程执行：一种是其有效用户ID等于 sem_perm.cuid或sem_perm.uid的进程：另一种是具有超级用户特权的 进程。
+GETVAL 返回成员 sewnw/M 的 semval 值。
+SETVAL 设置成员smnww的semval值。该值由arg.vaZ指定。
+GETPID 返回成员sewnw/M 的 sempid 值。
+GETNCNT 返回成员 sewnw/M 的 semncnt 值。
+GETZCNT 返回成员 sewnw/M 的 semzcnt 值。
+GETALL 取该集合中所有信号量的值，并将它们存放在由flrg.array指向的数组中。
+SETALL 按^叹似叩指向的数组中的值，设置该集合中所有信号量的值。
+对于除GETALL以外的所有GET命令，semctl函数都返回相应的值。其他命令的返回值为0。
+函数semop自动执行信号量集合上的操作数组，这是个原子操作。
+#include <sys/sem.h>
+int semop (int semid, struct senibuf semoparrayU , size—t nops)；
+返回值：若成功则返回0，若出错则返回-1
+参数印array是一个指针，它指向一个信号量操作数组，信号量操作由sembuf结构表示：
+struct sembuf {
+unsigned short sem__num
+short	sem__op;
+short	sem fig
+}； 一 参数M/w规定该数组中操作的数量(元素数)。
+对集合中每个成员的操作由相应的sem_oP值规定。此值可以是负值、0或正值。(下面的 讨论将提到信号量的undo标志。此标志对应于相应sem_flg成员的SEM_UND0位。)
+(1)	最易于处理的情况是sem_oP为正。这对应于进程释放占用的资源数。sem_op值加到 信号量的值上。如果指定了undo标志，则也从该进程的此信号量调整值中减去Sem_op。
+(2)	若sem_op为负，则表示宴获取由该信号量控制的资源。
+如若该信号量的值大于或等于sem_oP的绝对值(具有所需的资源)，则从信号量值中减去 Sem_oP的绝对值。这保证信号量的结果值大于或等于0。如果指定了undo标志，则sem_0p的 绝对值也加到该进程的此信号量调整值上。
+如果信号量值小于sem_oP的绝对值(资源不能满足要求)，贝IJ:
+(a)	若指定了IPC_NOWAIT,则semop出错返回EAGAIN。
+(b)	若未指定IPC—NOWAIT，则该信号量的semncnt值加1	(因为调用进程将进入休眠状态)， 然后调用进程被挂起直至下列事件之一发生：
+⑴此信号量变成大于或等于sem_oP的绝对值(即某个进程已释放了某些资源)。此信 号量的semncnt值减1 (因为已结束等待)，并且从信号量值中减去sem_0p的绝对值。 如果指定了 undo标志,则Sem_oP的绝对值也加到该进程的此信号量调整值上。
+； /* member # in set (0, lf	nsems-1) */
+/* operation (negative, 0, or positive) */ ;/* IPC-NOWAIT, SEM_UNDO */
+國
+
+ 
+426 第15章进程间通信
+(ii)从系统中删除了此信号量。在此情况下，函数出错则返回EIDRM。
+[11]	(iii)进程捕捉到一个信号，并从信号处理程序返回。在此情况下，此信号量的
+semncnt值减1 (因为调用进程不再等待)，并且函数出错返回EINTR。
+(3)	若sem_op为0,这表示调用进程希望等待到该信号量值变成0。
+如果信号量值当前是0,则此函数立即返回。
+如果信号量值非0，贝IJ:
+(a)	若指定了	I PC_NOWAIT，则出错返回EAGAIN。
+(b)	若未指定IPC_NOWAIT,则该信号量的semzcnt值加1	(因为调用进程将进入休眠状态)， 然后调用进程被挂起，直至下列事件之一发生为止：
+(i)	此信号量值变成0。此信号量的semzcnt值减1	(因为调用进程已结束等待)。
+(ii)	从系统中删除了此信号量。在此情况下，函数出错返回EIDRM。
+(iii)	进程捕捉到一个信号，并从信号处理程序返回。在此情况下此信号量的semzcnt 值减1 (因为调用进程不再等待)，并且函数出错返回EINTR。
+semop函数具有原子性，它或者执行数组中的所有操作，或者什么也不做。
+«cit时的信号量调整
+正如前面提到的，如果在进程终止时，它占用了经由信号量分配的资源，那么就会成为一 个问题。无论何时，只要为信号量操作指定了SEM—UND◦标志，然后分配资源(sem_op值小 于0),那么内核就会记住对于该特定信号量，分配给调用进程多少资源(sem_op的绝对值)。 当该进程终止时，不论自愿或者不自愿，内核都将检验该进程是否还有尚未处理的信号量调整 值，如果有，则按调整值对相应量值进行处理。
+如果用带SETVAL或SETALL命令的semctl设置一信号量的值，则在所有进程中，对于该 信号量的调整值都设置为0。
+实例：信号量与记录锁的耗时比较
+如果多个进程共享一个资源，则可使用信号量或记录锁。对这两种技术在时间上的差别进 dH]行比较是有益的。
+若使用信号量，则先创建一个包含一个成员的信号量集合，然后对该信号量值赋初值1。 为了分配资源，以sem_op为-1调用semop,为了释放资源，则以sem_op为+ 1调用semop。 对毎个操作都指定SEM_UNDO，以处理在未释放资源条件下进程终止的情况。
+若使用记录锁，则先创建一个空文件，并且用该文件的第一个字节(无需存在)作为锁字 节。为了分配资源，先对该字节获得一个写锁：释放该资源时，则对该字节解锁。记录锁的性 质确保了当一个锁的属主进程终止时，内核会自动释放该锁。
+表15-7显示了在Linux上使用这两种不同技术进行锁操作所需的时间。在毎一种情况中，资 源都被分配，然后释放，如此循环10 000次。这同时由三个不同的进程执行。表15-7中所示的 时间是三个进程的总计，单位是秒。
+表15-7信号量锁和记录锁的时间比较
+操作	用户	系统	时钟
+带undo的信号量	0.38	0.48	0.86
+建议性记录锁	0.41	0.95	1.36
+
+ 
+15.9共享存储 427
+在Linux上，记录锁与信号量锁相比，在时间上要多耗用约60%。
+虽然记录锁慢于信号量锁，但如果只需锁一个资源(例如共享存储段)并且不需要使用 XSI信号量的所有花哨的功能，则宁可使用记录锁。理由是使用简易，且进程终止时系统会处 理任何遗留下来的锁。	口
+15.9共享存储
+共享存储允许两个或更多进程共享一给定的存储区。因为数据不需要在客户进程和服务器 进程之间复制，所以这是最快的一种ipc。使用共享存储时要掌握的唯一窍门是多个进程之间 对一给定存储区的同步访问。若服务器进程正在将数据放入共享存储区，则在它做完这一操作 之前，客户进程不应当去取这些数据。通常，信号量被用来实现对共享存储访问的同步。(不 过正如前节最后部分所述，记录锁也可用于这种场合。)
+Single UNIX Specification在其实时扩展的共享存储对象选项中，包括了访问共享存储的一套替代 接口 •在农书中不涉及该实时扩展。
+内核为毎个共享存储段设置了一个shmid_dS结构。
+struct shmidds {		
+struct ipcjperm	shtnjperm；	/* see Section 15-6.2 */
+size_t	shm_segsz；	/* size of segment in bytes */
+pid_t	shm_lpid?	/* pid of last shmopO */
+pid_t	shm 一cpid;	/* pid of creator */
+shmatt_t	shm_nattch；	/* number of current attaches */
+time—t	ghni_atime；	/* last-attach time */
+time—t	shm_dtime；	/* last-detach time */
+t ime—t	ghm_ctime；	/* last-change time */
+(按照支持共享存储段的需要，毎种实现会在shmid_ds结构中增加其他成员。)
+shniatt_t类型定义为不带符号整型，它至少与unsigned short一样大。表15-8列出了 影响共享存储的系统限制(见15.6.3节)。
+表15-8影响共享存储的系统限制
+说明	典型值
+	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+共享存储段的最大字节数 共享存储段的最小字节数 系统中共享存储段的最大段数 每个进程共享存储段的最大段数	33 554 432 1
+192
+128	33 554 432 1
+4 096 4 096	4 194 304 1
+32
+8	8 388 608 1
+100
+6
+为获得一个共享存储标识符，调用的第一个函数通常是shmget。
+#include <sys/shm.h>
+int shmget (key—t key, a±ze_z size, int flag)；
+返回值：若成功则返冋共享存储ID,若出错则返回_1
+
+ 
+428 第15章进程间通信
+15.6.1节说明了将变换成一个标识符的规则，以及是创建一个新共享存储段还是引用一个现 存的共享存储段。当创建一个新段时，初始化shmid_dS结构的下列成员：
+•	ipc_perm结构按15.6.2节中所述进行初始化。该结构中的mode成员按/Zag中的相应权限 位设置。这些权限用表15-2中的常量指定。
+•	shm_lpid、shm_nattach、shm_atime、以及shm一dtime都设置为0o
+•	shm_ctime设置为当前时间。
+•	shm_segsz设置为请求的长度(size)。
+参数是该共享存储段的长度(单位：字节)。实现通常将其向上取为系统页长的整数倍。 但是，若应用指定的hze值并非系统页长的整数倍，那么最后一页的余下部分是不可使用的。 如果正在创建一个新段(一般是在服务器进程中)，则必须指定其hze。如果正在引用一个现存 的段(一个客户进程)，则将hze指定为0。当创建一新段时，段内的内容初始化为0。 shmctl函数对共享存储段执行多种操作。
+#include <sys/shm.h>	
+int shmctl (int shmid, i	nt cmd, struct shmid一ds *buf);
+	返回值：若成功则返回0，若出错则返回-1
+cmd参数指定下列5种命令中一种，使其在指定的段上执行。
+IPC_STAT取此段的shmid_ds结构’并将它存放在由&«/指向的结构中。
+IPC_SET 按&«/指向结构中的值设置与此段相关结构中的下列三个字段：shm—perm.
+uid、shm_perm.gid以及shnuperm.mode。此命令只能由下列两种进程 执行：一种是其有效用户ID等于shm_perm. cuid或shm_perm.uid的进 程：另一种是具有超级用户特权的进程。
+IPC_RMID从系统中删除该共享存储段。因为每个共享存储段有一个连接计数 (shmid_ds结构中的shm_nattch字段)，所以除非使用该段的最后一个进程 终止或与该段脱节，否则不会实际上删除该存储段。不管此段是否仍在使用， 该段标识符立即被删除,所以不能再用shmat与该段连接。此命令只能由下列 两种进程执行:一种是其有效用户ID等于shm_perm. cuid或shm_perm .uid 的进程> 另一种是具有超级用户特权的进程。
+Linux和Solaris提供了下列另外两种命令，但它们并非Single UNIX Specification的组成部分： SHM_L0CK 将共享存储段锁定在内存中。此命令只能由超级用户执行。
+SHM一 UNLOCK 解锁共享存储段。此命令只能由超级用户执行。
+一且创建了一个共享存储段，进程就可调用shmat将其连接到它的地址空间中。
+#include <sys/shm.h>
+void * shmat (int shmid, const void *addr • int flag)；
+返回值：若成功则返回指向共享存储的指针，若出错则返回-1
+共享存储段连接到调用进程的哪个地址上与flddr参数以及在/Iflg中是否指定SHM_RND位有关。 •如果•为0，则此段连接到由内核选择的第一个可用地址上。这是推荐的使用方式。 •如果•非0，并且没有指定SHM_RND,则此段连接到•所指定的地址上。
+
+ 
+15.9共享存储 429
+•如果非0,并且指定了SHM_RND，则此段连接到mod ulus SHMLBA))所 表示的地址上。SHM_RND命令的意思是“取整”。SHMLBA的意思是“低边界地址倍数”， 它总是2的乘方。该算式是将地址向下取最近1个SHMLBA的倍数。
+除非只计划在一种硬件上运行应用程序(这在当今是不大可能的)，否则不应指定共享段 所连接到的地址。所以一般应指定flA/r为0,以便由内核选择地址。
+如果在/Iflg中指定了SHM_RDONLY位，则以只读方式连接此段。否则以读写方式连接此段。 shmat的返回值是该段所连接的实际地址，如果出错则返回-1。如果shmat成功执行，那 么内核将使该共享存储段shmid_ds结构中的shm_nattch计数器值加1。
+当对共享存储段的操作已经结束时，则调用shmdt脱接该段。注意，这并不从系统中刪除 其标识符以及其数据结构。该标识符仍然存在，直至某个进程(一般是服务器进程)调用 shmctl (带命令IPC_RM；ED)特地删除它。
+#include <sys/shm.h>	
+int shmdt (void *addr)；	
+	返回值：若成功则返回0,若出错则返回-1
+参数是以前调用shmat时的返回值。如果成功，shmdt将使相关shmid—ds结构中的 shm_nattcli计数器值减1。
+内核将以地址0连接的共享存储段放在什么位置上与系统密切相关。程序清单15-11打印一 些信息，它们与特定系统将各种不同类型的数据放在什么位置有关。
+	程序清单15-11打印各种不同类型的数据所存放的位置	
+#include "apue.h"
+#include <sys/shm.h>
+#define ARRAY一SIZE 40000 #define MALLOC_SIZE 100000 #define SHM—SIZE 100000
+#define SHM_MODE 0600 /* user read/write */
+char array[ARRAY_SIZE]； /* uninitialized data = bss */
+int
+main (void)
+{
+int shmid；
+char *ptrf *shmptr；
+printf ("array [] from %lx to %lx\nH , (unsigned long) Sear ray [0],
+(unsigned long)&array[ARRAY一SIZE])； printf("stack around %lx\n”， (unsigned long)&shmid)；
+if ((ptr = malloc(MALLOC_SIZE)) == NULL) err—sys("malloc error"); printf ("malloced from %lx to %lx\n11, (unsigned long) ptr,
+(unsigned long)ptr+MALLOC_SIZE)；
+if ((shmid = shmget(IPC—PRIVATE, SHM—SIZE, SHM一MODE)) < 0)
+
+ 
+430 第15章进程间通信
+err一sys("shmget error")； if ((shmptr = shmat(shmid, 0, 0)) == (void *)-1) err_sys (11 shmat error*')； printf("shared memory attached from %lx to %lx\n",
+(unsigned long)shmptr, (unsigned long)shmptr+SHM_SXZE)；
+if (shmctl(shmid, XPC_RMID, 0) < 0) err一sys("shmctl error")；
+exit(0)；
+}
+在一个基于Intel的Linux系统上运行此程序，其输出如下：
+$ ./a.out
+array[] from 804a080 to 8053cc0
+stack around bffff9e4
+malloced from 8053cc8 to 806c368
+shared memory attached from 40162000 to 4017a6a0
+图15-13描绘了这种情况，这与图7-3中所示的典型存储区布局类似。注意，共享存储段紧靠在
+栈之下。	□
+J命令行参数和环境变量
+•	Oxbf f f f 9e4
+	0x4017a6a0^
+>共享存储，100 000字节
+4——0x40162000J
+	0x0806c368^
+Smalloc 100 000字节
+•m	0x08053cc8 J
+^	0x08053cc0 |
+.? array[] 40 000字节
+•m	0x0804a080J
+图15-13在基干Intel的Linux系统上的存储区布局
+14.9节中曾说明mmap函数可将一个文件的若干部分映射至进程地址空间。这在概念上类似 于用shmat XSI IPC函数连接一共享存储段。两者之间的主要区别是，用mmap映射的存储段是 与文件相关联的，而XSI共享存储段则并无这种关联。
+实例：/dev/zero的存俺映射
+共享存储可由不相关的进程使用。但如果进程是相关的，则某些实现提供了一种不同的技术。
+下面说明的技术用于FreeBSD 5.2.1. Linux 2.4.22和Solans 9。Mac OS X 10.3当前并不支持将字符 设备映射至进程地址空间，
+在读设备/dev/zero时，该设备是0字节的无限资源。它也接收写向它的任何数据，但又 忽略这些数据。我们对此设备作为IPC的兴趣在于，当对其进行存储映軒叶，它具有一些特殊
+髙地址
+栈
+共享存储
+堆
+非初始化数据
+初始化数据
+正文
+低地址
+
+ 
+15.9共享存储 431
+的性质：
+•创建一个未名存储区，其长度是mmap的第二个参数，将其向上取整为系统的最近页长。
+•存储区都初始化为0。
+•如果多个进程的共同祖先进程对mmap指定了MAP_SHARED标志，则这些进程可共享此存 储区。
+程序淸单15-12是使用此特殊设备的一个例子。
+	程序清单15-12在父、子进程间使用/dev/zero存储映射I/O的IPC	
+#include "apue.h"
+#include <fcntl.h>
+#include <sys/mman.h>
+#define NLOOPS	1000
+#define SIZE	sizeof(long) /* size of shared memory area */
+static int update(long *ptr)
+{
+return((*ptr)++)； /* return value before increment */
+}
+int
+main(void)
+{
+int fd, i, counter； pid—t pid; void *area;
+if ((fd = open("/dev/zero”， 0_RDWR)) < 0) err—sys(Mopen error")； if ((area = mmap(0, SIZE, PROT一READ 丨 PROT—WRITE, MAP一SHARED, fd, 0)) =* MAP一FAILED)	-	-	-
+err一sys(nmmap error")； close(fd);	/* can close /dev/zero now that it,s mapped */
+TELL一WAIT();
+if ((pid = fork⑴ < 0) { err一sys (11 fork error")；
+} else if (pid > 0) {	/* parent */
+for (i = 0; i < NLOOPS； i += 2) {
+if ((counter = update((long *)area)) != i)
+err一quit("parent: expected %d, got %dM# i, counter)；
+TELL一CHILD(pid);
+WAIT:CHILD();
+} else {	/* child */
+for (i = 1； i < NLOOPS + 1? i += 2) {
+WAIT—PARENT();
+if ((counter = update((long *)area)) != i)
+err一quit("child: expected %d, got %d", i, counter)；
+TELL一PARENT(getppid())；
+exit(0)；
+
+ 
+432 第15章进程间通信
+它打开此/dev/zero设备，然后指定长整型的长度调用mmap。注意，一旦存储区映射成 功，就关闭此设备。然后，进程创建一个子进程。因为在调用mmap时指定了MAP—SHARED, 所以一个进程写到存储映射区的数据可由另一进程见到。(如果已指定MAP_PRIVATE，则此示 例程序不能工作。)
+然后，父、子进程交替运行，使用8.9节中的同步函数各自对共享存储映射区中的长整型数 加1。存储映射区由mmap初始化为0。父进程先对它进行增1操作，使其成为1,然后子进程对
+其进行增1操作，使其成为2,然后父进程使其成为3	注意，当在update函数中对长整型值
+增1时，因为增加的是其值，而不是指针，所以必须使用括号。
+以上述方式使用/dev/zero的优点是：在调用mmap创建映射区之前，无需存在一个实际 文件。映射/dev/zero自动创建一个指定长度的映射区。这种技术的缺点是：它只在相关进 程间起作用。但在相关进程之间使用线程(第11章和第12章)可能更为简单、有效。注意，无 论使用哪一种技术，都需对共享数据进行同步访问。	口
+实例：匿名存储映射
+很多实现提供了一种类似干/dev/zero的设施，称为匿名存储映射。为了使用这种功能， 在调用rrunap时指定MAP_AN0N标志，并将文件描述符指定为-1。结果得到的区域是匿名的(因 为它并不通过一个文件描述符与一个路径名相结合)，并且创建一个可与后代进程共享的存储区。
+本书讨论的四种平台都支持匿名存储映斯。但是注意.Linux为此定义了MAP_ANONYMOUS标志， 并将MAP.._ANON标志定义为与它相同的值以改善应用的可移植性。
+为使程序清单15-12所示程序应用这种特征，对它做了三处修改：一是删除了对干 /dev/zero的open语句，二是删除了对干fd的close语句，三是将mmap调用修改成
+if ((area = mmap(0# SIZE, PROT—READ | PROT—WRITE,
+MAP_AN0N | MAPSHARED, -1, 0)) == MAP—FAILED)
+的形式。在此调用中，指定了MAP_AN0N标志，并将文件描述符取为-1。程序的其余部分则没 有改变。	口
+最后两个例子说明了在多个相关进程之间如何使用共享存储段。如果在无关进程之间使用 共享存储段，那么有两种替换的方法。其一是应用程序使用XSI共享存储函数，另一种是使用 [540] mmap将同一文件映射至它们的地址空间，^此使用MAP—SHARED标志。
+15-10客户进程-服务器进程属性
+下面详细说明客户进程和服务器进程的某些属性，这些属性受到它们之间所使用的IPC类 型的影响。最简单的关系类型是使客户调用fork然后调用exec执行所希望的服务器进程。在 for^k之前先创建两个半双工管道使数据可在两个方向传输。图15-8是这种形式的-个例子。被 执行的服务器程序可能是设置用户ID的程序，这使它具有了特权。服务器进程查看客户进程的 实际用户ID就可以决定客户进程的身份。(回忆8.10节，从中可了解到在exec前后实际用户 和实际组ID并没有改变。)
+在这种安排下，可以构筑一个开放式服务器(open server)。( 17.5节提供了这种客户和服 务器的一种实现)。它为客户进程打开文件而不是客户进程自己调用open函数。这样就可以在
+
+ 
+15.10客户进程-服务器进程属性 433
+正常的UNIX用户/组/其他权限之上或之外，增加附加的权限检査。假定服务器进程执行的是设 置用户ID程序，这给予了它附加的权限(很可能是root权限)。服务器进程用客户进程的实际用 户ID以决定是否给予它对所请求文件的访问权限。使用这种方式，可以构筑一个服务器进程，
+它允许某种用户获得通常没有的访问权限。
+在此例子中，因为服务器进程是父进程的子进程，所以它能做的一切是将文件内容传送给 父进程。这种方式对普通文件完全够用，但是对特殊设备文件却不能工作。我们希望能做的是 使服务器进程打开所要的文件，并送回文件描述符.但是实际情况却是父进程可向子进程传送 打开文件描述符，而子进程则不能向父进程传回文件描述符(除非使用将在第17章介绍的专门 编程技术)。
+图15-12中示出了另一种类型的服务器进程。这种服务器进程是一个守护进程，所有客户进 程用某种形式的IPC与其联系。对于这种形式的客户进程-服务器进程关系，不能使用管道。要 求使用命名的IPC，例如FIFO或消息队列。对于FIFO,如果服务器进程必须将数据送回客户进 程，则对每个客户进程都要有单独使用的FIFO。如果客户进程-服务器进程应用程序只有客户 进程向服务器进程发送数据，则只需要一个众所周知的FIFO。(系统V行式打印机假脱机程序 使用这种形式的客户进程-服务器进程。客户进程是1P(1)命令，服务器进程是Ipsched守护进 程。因为只有从客户进程到服务器进程的数据流，没有任何数据需送回客户进程，所有只需使 用一个 FIFO。)
+使用消息队列则存在多种可能性：
+(1)	在服务器进程和所有客户进程之间只使用一个队列，使用消息的类型字段指明谁是消 息的接收者。例如，客户进程可以用类型字段1发送它们的消息。在请求之中应包括客户进程 的进程ID。此后，服务器进程在发送响应消息时，将类型字段设置为客户进程的进程ID。服务 器进程只接收类型字段为1的消息(msgrcv的第四个参数)，客户进程则只接收类型字段等于 它进程ID的消息。
+(2)	另一种方法是每个客户进程使用一个单独的消息队列。在向服务器进程发送第一个请_ 求之前，每个客户进程先创建它自己的消息队列，创建时使用键IPC_PRIVATE。服务器进程 也有它自己的队列，其键或标识符是所有客户进程都知道的。客户进程将其第一个请求送到服
+务器进程的众所周知的队列上，该请求中应包含其客户进程消息队列的队列ID。服务器进程将 其第一个响应送至客户进程队列，此后的所有请求和响应都在此队列上交换。
+使用这种技术的一个问题是：每个客户进程专用队列通常只有一个消息在其中——或者是 对服务器进程的一个请求，或者是对客户进程的响应。这似乎是对有限的系统资源(消息队列)
+的浪费，为此可以用一个FIFO来代替。另一个问题是服务器进程需从多个队列读消息。对于消 息队列，select和poll都不起作用。
+使用消息队列的这两种技术都可以用共享存储段和同步方法(信号量或记录锁)实现。
+这种类型的客户进程-服务器进程关系(客户进程和服务器进程是无关系进程)的问题是：
+服务器进程如何准确地标识客户进程？除非服务器进程正在执行一种非特权操作，否则服务器 进程知道客户进程的身份是很重要的。例如，若服务器进程是一个设置用户ID程序，就有这种 要求。虽然，所有这几种形式的IPC都经由内核，但是它们并未提供任何措施使内核能够标识 发送者。
+对于消息队列，如果在客户进程和服务器进程之间使用一个专用队列(于是一次只有一个 消息在该队列上)，那么队列的mSg_lSpid包含了对方进程的进程ID。但是当客户进程将请求
+
+ 
+434 第15幸进程间通信
+发送给服务器进程时，我们想要的是客户进程的有效用户ID,而不是它的进程ID。现在还没有 一种可移植的方法，在已知进程ID的情况下可以得到有效用户ID。(内核在进程表项中自然地 保持有这两种值，但是除非彻底检査内核存储空间，否则已知一个，无法得到另一个。)
+我们将在17.3节中使用下列技术,使服务器进程可以标识客户进程。这一技术既可使用FIF0、 消息队列或信号量，也可使用共享存储。在下面的说明中假定按图15-12使用了FIFO。客户进 程必须创建它自己的FIFO,并且设置该HFO的文件访问权限，使得只允许用户读，用户写。 假定服务器进程具有超级用户特权(或者它很可能并不关心客户进程的真实标识)，所以服务 器进程仍可读、写此FIFO。当服务器进程在众所周知的FIFO上接收到客户进程的第一个请求 时(它应当包含客户进程专用FIFO的标识)，服务器进程调用针对客户进程专用FIFO的stat或 fstat。服务器进程假设客户进程的有效用户ID是FIFO的所有者(stat结构的st_uid字段)。 服务器进程验证该FIFO只有用户读、用户写权限。服务器进程还应检査该FIFO的三个时间量 (stat结构中的st_atime，st_mtime和st_ctime字段)，要检査它们与当前时间是否很接 近(例如不早于当前时间15s或30s)。如果一个有预谋的客户进程可以创建一个FIFO,使另一 个用户成为其所有者，并且设置该文件的权限为用户读和用户写，那么在系统中就存在了其他 基础性的安全问题。
+为了用XSIIPC实现这种技术，回想一下与每个消息队列、信号量以及共享存储段相关的 ipc_perm结构，其中cuid和cgid字段标识IPC结构的创建者。以FIFO为例，服务器进程应 当要求客户进程创建该IPC结构，并使客户进程将访问权限设置为只允许用户读和用户写。服 务器进程也应检验与该IPC相关的时间值与当前时间是否很接近(因为这些IPC结构在显式地删 除之前一直存在)。
+在17.2.2节中，将会看到进行这种身份验证的一种更好的方法，其关键是内核提供客户进 程的有效用户ID和有效组ID。STREAMS子系统在进程之间传送文件描述符时可以做到这一点。
+15.11小结
+本章详细说明了进程间通信的多种形式：管道、命名管道(FIFO)以及另外三种IPC形式 (通常称为XSI IPC)，即消息队列、信号量和共享存储。信号量实际上是同步原语而不是IPC, 常用于共享资源(例如共享存储段)的同步访问。对于管道，我们说明了popen函数的实现， 说明了协同进程,以及使用标准I/O库缓冲机制时可能遇到的问题。
+将消息队列对全双工管道、信号量对记录锁等不同方法的耗时做了比较，然后提出了下列建 议：要学会使用管道和FM)，因为在大量应用程序中仍可有效地使用这两种基本技术。在新的应 用程序中，要尽可能避免使用消息队列以及信号量，而应当考虑全双工管道和记录锁，它们使用 起来会简单得多。共享存储段有其应用场合，而mmap函数(见14.9节)也能提供同样的功能。
+下一章将介绍网络IPC,它们使进程能够跨越计算机的边界进行通信。
+习题
+15.1在程序清单15-2父进程代码的末尾，如果删除waitpid前的close,结果将如何？
+15.2在程序清单15-2父进程代码的末尾，如果删除waitpid,结果将如何？
+15.3如果popen函数的参数是一个不存在的命令，这会造成什么结果？编写一段小程序对此 进行测试。
+
+ 
+15.11 小 结 435
+15.4删除程序清单15-9中的信号量处理程序，执行该程序并终止子进程。输入一行后，怎样 才能说明父进程是由SIGPIPE终止的？
+15.5将程序清单15-9中进行管道读、写的read和write用标准I/O库代替。
+15.6 POSIX.I加入waitpid函数的理由之一是，POSIX.I之前的大多数系统不能处理下面的 代码。
+if ((fp = popen("/bin/true", "r")} == NULL) if ((rc = system("sleep 100")) == -1) if (pclose(fp) == -1)
+若在这段代码中不使用wai tpid函数会如何？用wait代替呢？
+15.7当一个管道被写进程关闭后，解释select和poll如何处理该管道的输入描述符。编两 个测试程序，一个用select，另一个用poll，并判断答案是否正确。当一个管道的读 端被关闭时，请重做此习题以査看该管道的输出描述符。
+15.8如果popen以type为"r"执行cffKZwWng，并将结果写到标准出错输出，结果如何？
+15.9 popen函数能使shell执行它的cffuZWriVig参数，当cmdstring终止时会产生什么结果?
+(提示：画出与此相关的所有进程。)	.
+15.10大多数UNIX系统允许读写FIFO,但是POSIX.I特别声明没有定义为读写而打开FIFO。
+请用非阻塞方法实现为读写而打开FIFO。
+15.11除非文件包含敏感或机密数据，否则允许其他用户读文件不会造成损害。(不过，窥探 别人的文件总归是不良行为。)(但是，如果一个恶意进程读取了被一个服务器进程和几 个客户进程使用的消息队列中的一条消息后，会产生什么后果？恶意进程需要知道哪些 信息就可以读消息队列？
+15.12编写一段程序完成下面的工作：执行一个循环5次，在每次循环中，创建一个消息队列， 打印该队列的标识符，然后删除队列。接着再循环5次，在每次循环中利用键 IPC_PRIVATE创建消息队列并将一条消息放在队列中。程序终止后用ipcs(l)査看消息 队列。解释队列标识符的变化。
+15.13描述如何在共享存储段中建立一个数据对象的链接列表。列表指针如何保存？
+15.14画出程序清单15-12所示程序运行时下列值随时间变化的曲线图(假定在调用fork后子 进程首先运行)，这些值是：
+(1)	在父进程和子进程中的变量i,
+(2)	在共享存储区中长整型的值，
+(3)	update函数的返回值。
+15.15使用15.9节中的XSI共享存储函数代替共享存储映射区，改写程序清单15-12。
+15.16使用15.8节中XSI信号量函数改写程序清单15-12,实现父进程与子进程间的交替。
+15.17使用建议性记录锁改写程序清单15-12,实现父进程与子进程间的交替。
+固
+[544]
+
+ 
+
+ 
+ 
+398 第15章进程间通信
+置标示为“opt”，可选择包通常并非是默认安装的。
+表15-1中前7种IPC通常限于同一台主机的各个进程间的ipc。最后两种，即套接字和 STREAMS,是仅有的两种支持不同主机上各个进程间IPC的类型。
+我们将有关IPC的讨论分成3章。本章讨论经典的IPC:管道、FIFO,消息队列、信号量以 及共享存储器。下一章将观察使用套接字的网络IPC。第17章将考査IPC的某些高级特征。
+15.2管道
+管道是UNIX系统IPC的最古老形式，并且所有UNIX系统都提供此种通信机制。管道有下 面两种局限性：
+(3)	历史上，它们是半双工的(即数据只能在-个方向上流动)。现在，某些系统提供全双 工管道，但是为了最佳的可移植性，我们决不应预先假定系统使用此特性。
+(4)	它们只能在具有公共祖先的进程之间使用。通常，一个管道由一个进程创建，然后该 进程调用fork,此后父、子进程之间就可应用该管道。
+我们将会看到FIFO (见15.5节)没有第二种局限性，UNIX域套接字(见17.3)和命名流管 道(见17.2.2节)则没有这两种局限性。
+尽管有这两种局限性’半双工管道仍是最常用的IPC形式。每当你在管道线中键入一个 由shell执行的命令序列时，shell为每-条命令单独创建一进程’然后将前一条命令进程的标准 输出用管道与后一条命令的标准输人相连接。
+管道是由调用pipe函数而创建的：
+#include <unistd.h> int pipe (int filedes⑵)；
+返回值：若成功则返回0，若出错则返回-1
+经由参数A'/et/以返回两个文件描述符：为读而打开，/,7e办彳7?为写而打开。 filedesl 77的输出是/?/«fes/07的输人。
+在4.3BSD、4.4BSD和Mac OS X 10.3中，管道是用UNIX域套接字实现的。虽然UNIX域套接 字是默认全双工的’但这些操作系统对用于管道的杳接字进行了处理’使这些管道只以半双工模式 梯作。
+P0SIX.1允许实现支持全双工管道。对于这些实现，filedes[0]和filedesn】以读/写方式_打开。
+有两种方法来描绘一个半双工管道’见图15-1。左半图显示了管道的两端在一个进程中相 互连接，右半图则说明数据通过内核在管道中流动。
+fstat函数(见4.2节)对管道的每一端都返回一个FIFO类型的文件描述符’可以用 S_ISFIF0宏来测试管道。
+POS1X.1规定stat结构的st一size成员吋于管道是表定义的。但是当fstat函数应用于管道读端 的文件描述符时，很多系统在st_size中存放管道中可用于读的字节数。但是，这是不可移枝的。
+单个进程中的管道几乎没有任何用处。通常，调用pipe的进程接着调用fork,这样就创 建了从父进程到子进程(或反向)的IPC通道。图15-2显示了这种情况。
+
+ 
+15.2 管 道 399
+用户进程		用户进程
+	或	
+fd[0] fd[l]		fd[0] fd[l]
+v	管道 h	
+内核
+图15-1观察半双工管道的两种方法
+调用fork之后做什么取决于我们想要有的数据流的方向。对于从父进程到子进程的管道， 父进程关闭管道的读端(fd[0])’子进程则关闭写端(fd[l])。图15-3显示了在此之后描述
+符的安排。
+父进程	子进程	父进程	子进程
+ 
+图15-2调用fork之后的半双工管道	图15-3从父进程到子进程的管道
+为了构造从子进程到父进程的管道，父进程关闭fd[l]，子进程关闭fd[0]。
+当管道的一端被关闭后，下列两条规则起作用：
+(3)	当读一个写端已被关闭的管道时，在所有数据都被读取后，read返回0，以指示达到了 文件结束处。(从技术方面考虑，管道的写端还有进程时，就不会产生文件的结束。可以复制一 个管道的描述符，使得有多个进程对它具有写打开文件描述符。但是，通常一个管道只有一个读 进程、一个写进程。下一节介绍FIFO时，我们会看到对于一个单一的FIFO常常有多个写进程。)
+(4)	如果写一个读端已被关闭的管道，则产生信号SIGPIPE。如果忽略该信号或者捕捉该 信号并从其处理程序返回，则write返回-1, errno设置为EPIPE。
+在写管道(或FIFO)时，常量PIPE_BUF规定了内核中管道缓冲区的大小。如果对管道调 用write,而且要求写的字节数小于等于PIPE_BUF，则此操作不会与其他进程对同一管道 (或FIFO)的write操作穿插进行。但是，若有多个进程同时写一个管道(或FIFO),而且有 进程要求写的字节数超过PIPE_BUF字节数时，则写操作的数据可能相互穿插。用pathconf 或fpathconf函数(见表2-11)可以确定PIPE_BUF的值。
+ 
+程序清单15-1创建了一个从父进程到子进程的管道，并且父进程经由该管道向子进程传送
+
+[497]
+[498]
+ 
+400 第15幸进程间通信
+数据。
+	程序清单15-1经由管道父进程向子进程传送数据
+#include "apue.h” int
+main (void)
+{
+int n； int fd[2]; pidt一t pid; char line[MAXLINE];
+if (pipe(fd) < 0)
+err_sys("pipe error")； if ((pid = fork()) < 0) { err_sys("fork error")；
+} else if (pid > 0) {	/* parent */
+close(fd[0])；
+write(fd[1], "hello world\n", 12);
+} else {	/* child */
+close(fd[1])；
+n = read(fd[0], line, MAXLINE)? write(STDOUT一FILENO, line, n)；
+} 一 exit(0)；
+在上面的例子中，直接对管道描述符调用read和write。更好的方法是将管道描述符复 制为标准输入和标准输出。在此之后通常子进程执行另一个程序，该程序或者从标准输入(已 @创建的管道)读数据，或者将数据写至其标准输出(该管道)。
+试编写一个程序，其功能是每次一页显示已产生的输出。已经有很多UNIX系统实用程序 具有分页功能’因此无需再构造一个新的分页程序’而是调用用户最喜爱的分页程序。为了避 免先将所有数据写到一个临时文件中，然后再调用系统中有关程序显示该文件，我们希望将输 出通过管道直接送到分页程序。为此’先创建一个管道，调用fork产生一个子进程，使子进 程的标准输入成为管道的读端，然后调用exec，执行用户喜爱的分页程序。程序清单15-2显示 了如何实现这些操作。(本例要求在命令行中有一个参数说明要显示文件的名称。通常，这种 类型的程序要求在终端上显示的数据已经在存储器中。)
+		程序清单15-2将文件ft制到分页程序 	
+#include "apue.h"
+#include <sys/wait.h>
+#define DEF—PAGER H/bin/more丨丨 /* default pager program */ int
+main(int argc, char *argv[])
+{
+int n； int fd[2]； pid—t pid；
+
+ 
+15.2 管 道 401
+char *pager, *argv0； char line[MAXLINE]；
+FILE *fp；
+if (argc 1= 2)
+err一quit("usage: a.out <pathname>");
+if ((fp = fopen(argv[1], "r”)) == NULL) err一sys("can,t open %s", argv[l]); if (pipe(fd) < 0)
+err—sys("pipe error");
+if ((pid = forkO ) < 0) { err_sys{"fork error");
+} else if (pid > 0) {
+/* parent */
+close(fd[0]),
+/* close read end */
+/★ parent copies argv[1] to pipe */ while (fgets(line, MAXLINE, fp) != NULL) { n = strlen(line)； if (write(fd[1], line, n) 1= n)
+err一sys("write error to pipe");
+} _ if (ferror(fp))
+err 一 sys (11 fgets error”)；
+close(fd[l])； /* close write end of pipe for reader */
+if (waitpid(pid, NULL, 0) < 0) err_sys("waitpid error");
+exit(0);
+} else {	/* child */
+close(fd[13); /* close write end */ if (fd[0] != STDIN一FILENO) {
+if (dup2(fd[0]7 STDIN一FILENO) STDIN—FILENO) err_sys("dup2 error to stdin"); close(fd[0]); /* don't need this after dup2 */
+國
+/* get arguments for execl() */ if ((pager = getenv("PAGER")) »= NULL) pager = DEF一PAGER; if ((argvO = strrchr(pager, '/')) i- NULL)
+argv0++?	/* step past rightmost slash
+else
+argvO = pager； /* no slash in pager */
+if (execl(pager, argvO, (char *)0) < 0) err一sys("execl error for %s", pager);
+exit(0)
+在调用fork之前先创建一个管道。fork之后父进程关闭其读端，子进程关闭其写端。子 进程然后调用dup2，使其标准输入成为管道的读端。当执行分页程序时，其标准输入将是管 道的读端。
+当我们将一个描述符复制到另一个时(在子进程中，fd[0]复制到标准输入)，应当注意 在复制之前该描述符的值并不是所希望的值。如果该描述符已经具有所希望的值，并且我们先 调用dup2,然后调用close则将关闭此进程中只有该单个描述符所代表的打开文件。(回忆 3.12节中所述，当dup2中的两个参数值相等时的操作。)在本程序中，如果shell没有打开标准
+
+ 
+402 第15幸进程间通信
+输入，那么程序开始处的fopen应已使用描述符0,也就是最小未使用的描述符，所以fd[0] 决不会等于标准输入。尽管如此，只要先调用dup2,然后调用close以复制一个描述符到另 一个，作为一种保护性的编程措施，我们总是先将两个描述符进行比较。
+请注意，我们是如何使用环境变量PAGER试图获得用户分页程序名称的。如果这种操作没 有成功，则使用系统默认值。这是环境变量的常见用法。	□
+回忆8.9节中的5个函数：TELL_WAIT、TELL_PARENT、TELL—CHILD、WAIT_PARENT 以及WAIT一CHILD。程序清单10-17提供了一个使用信号的实现。程序淸单15-3则是一个使用管 道的实现。
+	程序清单15-3使父、子进程同步的例程	
+#include "apue.h"
+static int pfdl[2], pfd2[2]；
+void
+TELL一WAIT (void)
+{—
+if (pipe(pfdl) < 0 || pipe(pfd2) < 0) err一sys("pipe error")；
+} _ void
+TELL一PARENT(pid_t pid)
+{ ~ '
+if (write(pfd2[1]# Mc”， 1)丨=l) err一sys("write error")；
+} _ void
+WAIT_PARENT (void)
+{ _
+char c；
+if (read{pfdl[0], &c# 1) != l) err一sys("read error")；
+if (c ! = 1 p#)
+)	err_quit("WAIT_PARENT: incorrect data")；
+void
+TELL一CHILD(pid 一t pid)
+{' '
+if (write(pfdl[1], "p", l) != l) err_sys("write error")；
+} _ void
+WAIT_CHILD(void)
+{ _
+char c；
+if (read(pfd2[0], &c, 1) !» 1)
+
+ 
+15.3 popen和pclose函数 403
+err_sys("read error")；
+if (c 1= )
+err_quit("WAIT_CHILD: incorrect data");
+如图15-4所示，在fork之前创建了两个管道。父进程在调用TELL_CHILD时，写一个字符 “P”至上一个管道，子进程在调用TELL_PARENT时，经由下一个管道写一个字符“C”。相应 的WAIT_xxx函数调用read读这个字符，并发生阻塞。
+父进程	子进程
+	V •	
+pfd2 [0]	”c"	pfd2[l]
+		
+图15-4用两个管道实现父子进程同步
+请注意，每一个管道都有一个额外的读取进程，这没有关系。也就是说，除了子进程从 pfdl[0]读取，父进程也有上一个管道的读端。因为父进程并没有执行对该管道的读操作，所 以这不会产生任何影响。	口
+15.3 popen和pclose函数
+常见的操作是创建一个管道连接到另一个进程，然后读其输出或向其输入端发送数据，为此，
+标准I/O库提供了两个函数popen和pclose。这两个函数实现的操作是：创建一个管道，调用 fork产生一个子进程，关闭管道的不使用端，执行一个shell以运行命令，然后等待命令终止。
+#include <stdio.h>	
+FILE *popen (const char * cmdstring,	const char *type)；
+	返回值：若成功则返回文件指计，若出错则返回NULL
+int pclose (FILE *fp)；	
+	返回值：级的终止状态，若出错则返回-1
+函数popen先执行fork，然后调用exec以执行并且返回一个标准I/O文件指针。 如果type是”r",则文件指针连接到的标准输出(见图15-5)。
+父进程	cmdstring (子进程)
+ 
+图 15-5 执行fp = popen (cmdsirmg, "r")函数的结果 如果邮e是"W”，则文件指针连接到c/rn/sm吨的标准输入(见图15-6)。
+父进程	cmdstring (子进程)
+ 
+图 15-6 执行fp = popen(cmdstring, "wn)函数的结果 有一种方法可以帮助我们记住popen最后一个参数及其作用，这就是与fopen进行类比。如果
+[502]
+函
+
+ 
+404 第15幸进程间通信
+type^ “r”，则返回的文件指针是可读的，如果0^是“w”，则是可写的。
+pclose函数关闭标准I/O流，等待命令执行结束，然后返回shell的终止状态。(我们曾在
+8.7	节对终止状态进行过说明，system函数(见8.13节)也返回终止状态。)如果shell不能被执 行，则pclose返回的终止状态与shell已执行exit (127) —样。
+由Bourne shell以下列方式执行； sh -c cmdstring
+这表示shell将扩展中的任何特殊字符。例如，可以使用，
+fp = popen("Is *.c", "r");
+或者
+fp = popen("cmd 2>&1H f "r")?
+ 
+用popen重写程序清单15-2,其结果示于程序清单15-4中。
+程序清单15-4用pppen向分页程序传送文件
+#	include "apue.h"
+#include <sys/wait.h>
+#define PAGER "${PAGER：-more}" /* environment variable, or default */ main(int argc, char *argv[])
+{
+char line[MAXLINE];
+FILE *fpin, *fpout；
+if (argc != 2)
+err一quit("usage: a.out <pathname>")；
+if ((fpin = fopen(argv[l], "r"))打 NULL) err_sys(Mcan,t open %s", argv[l])；
+if ((fpout = popen(PAGER, nw")) == NULL) err—sys (Mpopen error*')；
+/* copy argv[l] to pager */
+while (fgets(line, MAXLINE, fpin) 1= NULL) { if (fputs(line, fpout) == EOF)
+err_sys("fputs error to pipe">;
+} 一
+if (ferror(fpin))
+err_sys("fgets error")；
+if (pclose(fpout) == -1)
+err_sys("pclose error");
+exit(0)?
+使用popen减少了需要编写的代码量。
+shell命令${PAGER:-more}的意思是：如果shell变量PAGER已经定义，且其值非空，则使 用其值，否则使用字符串more。	□
+
+ 
+15.3 popen和pclose函数 405
+pfd[2]； pid; *fp；
+/*
+if
+if
+}
+if
+if
+only allow "r" or 11 wn */
+((type[0] != ,rt && type[0] != ) || type[1]
+errno = EINVAL；	/* required by POSIX */
+re turn (NULL)；
+i= 0)
+(childpid == NULL) {	/* first time through */
+/* allocate zeroed out array for child pids */
+maxfd = open一max();
+if ((childpid = calloc(maxfd, sizeof(pid—t))) == NULL)
+return(NULL)；
+(pipe(pfd) < 0)
+return(NULL)； /* errno set by pipe() */
+((pid = fork()) < 0) {
+return(NULL)； /* errno set by fork() */
+} else if (pid == 0) {	/* child */
+if (*type == ,r,) {
+close(pfd[0])；
+if (pfd[l] != STDOUT_FILENO) {
+dup2(pfd[1], STDOUT—FILENO);
+close(pfd[1])；
+}
+} else {
+close(pfd[1】)；
+if (pfd[0] != STDIN 一FILENO) {
+dup2(pfd[0]f STDIN一FILENO)；
+close(pfd [0])；
+}
+实例：popen和pclose函数
+程序清单15-5是我们编写的popen和pclose版本。
+程序清单15-5 popen和pclose函数
+#include "apue.h11 #include <errno.h>
+#include <fcntl.h>
+社include <sys/wait.h>
+/*
+*	Pointer to array allocated at run-1ime.
+*/
+static pid_t *childpid = NULL;
+/*
+*	From our open—max(), Figure 2.16.
+*/
+static int	maxfd；
+FILE * popen(const
+char *cmdstring, const char *type)
+I E
+Ltt dL n n i I ■Hi p F
+
+ 
+406 第15幸进程间通信
+/* close all descriptors in childpid[3 */ for (i = 0; i < maxfd； i++) if (childpid[i】> 0) close(i)；
+execl("/bin/sh", ”sh", "-c", cmdstring, (char *)0); _exit(127)；
+/* parent continues... */ if (*type == ) { close(pfd[1])；
+if ((fp = fdopen(pfd[0], type)) == NULL) return(NULL);
+} else {
+close(pfd[0])；
+if ((fp = fdopen(pfd[1], type)) == NULL) return(NULL)?
+childpid[fileno(fp)3 = pid; /* remember child pid for this fd */ return(fp)；
+}
+pclose(FILE *fp)
+{
+int	fd, stat;
+pid—t pid;
+if (childpid == NULL) { errno = EINVAL；
+return(-1)；	/* popen() has never been called */
+fd = fileno(fp)；
+if ((pid = childpid[fd]) == 0) { errno = EINVAL；
+return(早1);	/* fp wasn't opened by popen() */
+childpid[fd] = 0； if (fclose(fp) == EOF) return(-1)；
+while (waitpid(pid, &stat, 0) < 0) if (errno != EINTR)
+return(-1)； /* error other than EINTR from waitpid() */
+return(stat)； /* return child's termination status */
+虽然popen的核心部分与本章中以前用过的代码类似，但是增加了很多需要考虑的细节。 首先，每次调用poperi时，应当记住所创建的子进程的进程ID，以及其文件描述符或FILE指 针。我们选择在数组childpid中保存子进程ID，并用文件描述符作为其下标。于是，当以 FILE指针作为参数调用pclose时，我们调用标准I/O函数fileno得到文件描述符，然后取得 子进程ID,并用其作为参数调用waitpid。因为一个进程可能调用popen多次，所以在动态分 配childpid数组时(第一次调用popen时)，其数组长度应当是最大文件描述符数，于是该
+
+ 
+15.3 popen和pclose函数 407
+数组中可以存放与最大文件描述符数相同的子进程。
+调用pipe、fork以及为每个进程复制相应的文件描述符，这些操作与本章前面所述的 类似。
+POSIX.I要求子进程关闭在以前调用popen时打开且当前仍旧打开的所有I/O流。为此，在 子进程中从头逐个检査childpid数组的各元素，关闭仍旧打开的任何描述符。
+若pclose的调用者已经为信号SIGCHLD设置了一个信号处理程序，则pclose中的 waitpid调用将返回一个EINTR。因为允许调用者捕捉此信号(或者任何其他可能中断wai tpid 调用的信号)，所以当waitpid被-个捕捉到的信号中断时，我们只是再次调用waitpid。
+注意，如果应用程序调用waitpid,并且获得popen所创建的子进程的终止状态，则在应 用程序调用pclose时，其中将调用waitpid,它发现子进程已不再存在，此时返回_1， errno则被设置为ECHILD。这正是POSIX.1所要求的。
+如果一个信号中断了wait, pclose的早期版本返回EINTR。pclose的早期版本在wait期间阻塞 或忽略信号SIGINT、SIGQUIT以及SIGHUP,. POSIX.I则不允许这一点。
+□
+注意，popen决不应由设置用户ID或设置组ID程序调用。当它执行命令时，popen等同于：
+execl("/bin/sh"# "sh", "-c", command, NULL)；
+它在从调用者继承的环境中执行shell,并由shell解释执行一个心怀不轨的用户可以 操纵这种环境，使得shell能以设置ID文件模式所授与的提升了的权限以及非预期的方式执行 命令。
+popen特别适用于构造简单的过滤器程序，它变换运行命令的输入或输出。当命令希望构 造它自己的管道线时，就是这种情形。
+实例
+考虑一个应用程序，它向标准输出写一个提示，然后从标准输入读1行。使用popen,可 以在应用程序和输入之间插入一个程序以便对输入进行变换处理。图15-7显示了为此做的进程 安排。
+父进程	过滤程序
+ 
+图15-7用popen对输入进行变换处理
+对输入进行的变换可能是路径名扩充，或者是提供一种历史机制(记住以前输入的命令)。 程序清单15-6是--个简单的过滤程序，它只是将标准输入复制到标准输出，在复制时将所 有大写字符变换为小写字符。在写了一行之后，对标准输出进行了冲洗(用fflush)，其理由 将在下一节介绍协同进程时讨论。
+國
+[508]
+
+ 
+408 第15章进程间通信
+	程序清单15-6将大写字符换成小写字符的过滤程序
+#	inc lude "apue.h，1 #include <ctype.h>
+int
+main(void)
+{
+int c；
+while ((c = getchar()) l= EOF) { if (isupper(c))
+c = tolower(c)； if (putchar(c) == EOF)
+err_sys("output error”)； if (c == '\n,)
+fflush(stdout)；
+}
+exit(0)；
+对该过滤程序进行编译，其可执行目标代码存放在文件myuclc中，然后在程序清单15-7
+中用popen调用它们。
+	程序清单15-7调用大写/小写过應程序以读取命令	
+#include "apue.h"
+#include <sys/wait.h>
+int
+main (void)
+{
+char line[MAXLINE]；
+FILE *fpin；
+if ((fpin = popen("myuclc”， "r")) =* NULL)
+err—sys("popen error")；
+for ( ; ; ) {
+fputs("prompt> ", stdout)；
+fflush(stdout)；
+if (fgets(line, MAXLINE, fpin)
+break；
+if (fputs(line, 9tdout) EOF)
+err_sys(Mfputs error to pipe")
+} _
+if (pclose(fpin) == -1)
+err 一sys(”pclose error");
+putchar(#\n#)；
+exit(0);
+}
+NULL) /★ read from pipe
+因为标准输出通常是行缓冲的，而提示并不包含换行符，所以在写了提示之后，需要调用
+fflush0	口
+15.4协同进程
+UNIX系统过滤程序从标准输入读取数据，对其进行适当处理后写到标准输出。几个过滤
+
+ 
+15.4协同进程 409
+程序通常在shell管道命令行中线性地连接。当一个程序产生某个过滤程序的输入，同时又读取 该过滤程序的输出时，则该过滤程序就成为协同进程(coprocess)。
+Korn shell提供了协同进程[Bolsky and Korn 1995]。Bourne shell, Boume-again shell和C shell并没有提供按协同进程方式将进程连接起来的方法。协同进程通常在shell的后台运行，其 标准输入和标准输出通过管道连接到另一个程序。虽然初始化一个协同进程并将其输入和输出 连接到另一个进程，用到的shell语法是十分奇特的(详细情况见Bolsky和Korn[1995]中的第 62~63页)，但是协同进程的工作方式在C程序中也是非常有用的。
+popen只提供连接到另一个进程的标准输入或标准输出的一个单向管道，而对于协同进程,
+则它有连接到另一个进程的两个单向管道	个接到其标准输入，另一个则来自其标准输出。
+我们先要将数据写到其标准输入，经其处理后，再从其标准输出读取数据。
+ 
+让我们通过一个实例来观察协同进程。进程先创建两个管道：一个是协同进程的标准输入， 另一个是协同进程的标准输出。图15-8显示了这种安排。
+父进程	子进程(协同进程)
+	管道1	stdin
+		
+fd2[0]		stdout
+	管道2	
+图15-8写协同进程的标准输入，读它的标准输出
+程序清单15-8程序是一个简单的协同进程，它从其标准输入读两个数，计算它们的和，然 后将结果写至标准输出。(协同进程通常会做较此更有意义的工作。设计本实例的目的是帮助 了解将进程连接起来所需的各种管道设施。)
+	程序清单15-8对两个数求和的简单过滤程序	
+#include "apue.h" int
+main (void)
+{
+int n, inti, int2； char line[MAXLINE]；
+while ((n = read(STDIN_FILEN0, line, MAXLINE)) > o) { line[n] =0;	/* null terminate */
+if (sscanf(line, M%d%dM # &intl# &int2) « 2) { sprintf(line, n%d\n"f inti + int2)； n = strlen(line)；
+if (write(STDOUT^PILENO, line, n) !: n) err—sys("write error")；
+} else {
+if (write(STD0UT_FILEN0, "invalid args\n", 13) != 13) err—sys("write error")；
+exit(0)；
+
+ 
+410 第15章进程间通信
+对此程序进行编译，将其可执行目标代码存入名为add2的文件。
+程序清单15-9从其标准输入读入两个数之后调用add2协同进程，并将协同进程送来的值写 到其标准输出。
+程序清单15-9驱动add2过滤程序的程序
+#include ”apue.h"
+static void sig_pipe(int)
+int
+main(void)
+/* our signal handler */
+int n, fdl[2]• fd2[2]; pid_t pid; char line[MAXLINE]；
+if (signal(SIGPIPE, sig_pipe) == SIG_ERR) err—sys("signal error")；
+if (pipe(fdl) < 0 || pipe(fd2) < 0) err 一sys("pipe error")；
+if ((pid = fork()) < 0) { err—sys("fork error")；
+} else if (pid > 0) {	/* parent */
+close(fdl [0])； close(fd2[1])；
+while (fgets(line, MAXLINE, stdin) != NULL) { n = strlen(line)； if (write(fdl[1], line, n) 1= n)
+err一sys ("write error to pipe”； if ((n = read(fd2[0], line, MAXLINE)) < 0) err_sys ("read error from pipe”； if (n == 0) {
+err_msg(Mchild closed pipe"); break;
+}
+line[n] = 0? /* null terminate */ if (fputs(line, stdout) *= EOF) err—sys("fputs error")；
+if (ferror(stdin))
+err—sys("fgets error on stdin"}; exit(0);
+else {	/* child */
+close(fdl[1】)； close(fd2[0])；
+if (fdl[0] != STDIN 一FILENO) {
+if (dup2(fdl[0]7 STDIN_FILEN0) != STDIN—FILENO) err—sys ("dup2 error to stdin”； close(fdl[0] )?
+if (fd2[l] != STDOUT一FILENO) {
+if (dup2(fd2[1], STDOUT一FILENO) 1* STDOUT_FILENO) err_sys("dup2 error to stdout")； close(fd2[1])；
+}
+if (execl (” •/add2", nadd2ft, (char *) 0) < 0)
+
+ 
+15.4协同进程 411
+err_sys (ff execl error"); } _ exit(0)；
+}
+static void sig_pipe(int signo)
+{
+printf("SIGPIPE caught\n")； exit(1);
+在程序中创建了两个管道，父、子进程各自关闭它们不需使用的端口。两个管道一个用做 协同进程的标准输入，另一个则用做它的标准输出。子进程调用dup2使管道描述符移至其标 准输入和标准输出，然后调用execl。
+若编译和运行程序清单15-9程序，它如所希望的那样进行工作。进而言之，在程序正等待 输入时，若先杀死add2协同进程，然后输入两个数，接着程序对管道进行写操作，此时，由 于该管道已无读进程，于是调用信号处理程序(见习题15.4)。
+回忆表15-1,并非所有系统用pipe函数提供全双工管道。程序清单17-1将提供这一实 例的另一个版本，它使用一个全双工管道而不是两个半双工管道，适用于支持全双工管道的 系统。	口
+在协同进程add2 (见程序清单15-8)中，有意地使用了read和writel/O (UNIX系统 调用)。如果使用标准I/O改写该协同进程，其后果是什么呢？程序清单15-10就是改写后的 版本。
+	程序清单15-10对两个数求和的滤波程序，使用标准I/O	
+#include ,fapue.h11
+int
+main(void)
+{
+int inti, int2； char line[MAXLINE];
+while (fgets(line, MAXLINE, stdin) != NULL) {
+if (sscanf(line, "%d%dn, &intl# &int2) =* 2) { if (printf(H%d\n", inti + int2) == EOF) err一sys("printf error")；
+} else {
+if (printf("invalid args\n") == EOF) err_sys("printf error")；
+} _
+}
+exit(0)；
+}
+若程序清单15-9调用此新的协同进程，则它不再工作。问题出在系统默认的标准I/O缓冲机 制上。当调用程序清单15-10所示程序时，对标准输入的第一个fgets引起标准I/O库分配一个 缓冲区，并选择缓冲区的类型。因为标准输入是个管道，所以标准I/O库由系统默认是全缓冲的。
+
+ 
+412 第15章进程间通信
+对标准输出也作同样的处理。当add2从其标准输入读取而发生阻塞时，程序清单15-9程序从管 道读时也发生阻塞，于是#生了死锁。
+为此，更改将要运行的协同进程的缓冲类型，在程序清单15-10中的while循环之前加上 下面4行：
+if (setvbuf(stdin, NULL, 一IOLBF, 0) 1= 0) err—sys("setvbuf error")； if (setvbuf(stdout, NULL, _IOLBF, 0) != 0) errsys("setvbuf error")；
+这些代码行使得当有4右可用时，fgets就返回，并使得当输出一换行符时，printf立即执 行fflush操作。对setvbuf进行的这些显式调用使得程序15-10能正常工作。
+如果不能修改这种协同进程程序，则需使用其他技术。例如，如果在程序中使用aWk(l)代 替add2作为协同进程，则下列命令行不能工作，
+#! /bin/awk -f { print $1 + $2 }
+不能工作的原因还是标准I/O的缓冲机制问题。但是，在这种情况下不能改变awk的工作方 式(除非有awk的源代码)。我们不能修改awk的可执行代码，于是也就不能更改处理其标准 I/O缓冲的方式。
+对这种问题的一般解决方法是使被调用的协同进程(在本例中是awk)认为它的标准输入 和输出都被连接到一个终端。这使得协同进程中的标准I/O例程对这两个I/O流进行行缓冲，这 类似于前面所做的显式setvbuf调用。第19章将用伪终端实现这一点。	口
+15.7	FIFO
+FIFO有时被称为命名管道。管道只能由相关进程使用，这些相关进程的共同的祖先进程创 建了管道。(一个例外是已装配的基于STREAMS的管道，我们将在17.2.2中对此进行说明。)但 是，通过FIFO,不相关的进程也能交换数据。
+第4章中已经提及FIFO是一种文件类型。stat结构(见4.2节)成员St_mode的编码指明 文件是否是FIFO类型。可以用S_ISFIF0宏对此进行测试。
+创建FIFO类似于创建文件。确实，FIFO的路径名存在于文件系统中。
+#include <sys/stat.h>
+int mkf ifo (const char *pathname, mode t mode)；
+返回值：若成功则返回0,若出错则返回-1 ■
+mkfifo函数中zntw/e参数的规格说明与open函数中的zntw/e相同(见3.3节)。新FIFO的用户和 组的所有权规则与4.6节所述的相同。
+-旦已经用mkfifo创建了一个FIFO,就可用open打开它。其实，一般的文件I/O函数 (close、read、write, unlink等)都可用于FIFO。
+应用程序可以用mknod函数创建FIFO。POSIX.I原先并没有包括mknod函数，它首先提出了 mkf ifo。mknod现在已包括在XSLT展中。在大多数系统中，mkf ifo调用mknod创建FIFO
+
+ 
+15.5 FIFO 413
+POSIX.I也包括了对mkfifo(l)命令的支持。本书讨论的四种平台都支持此命令。于是，用一条 shell命令就可以创建一个FIFO,然后用一般的shelll/O重定向对其进fr访问。
+当打开一个FIFO时，非阻塞标志(0_N0NBL0CK)产生下列影响：
+•在一般情况中(没有指定0_N0NBL0CK)，只读open要阻塞到某个其他进程为写而打开 此FIFO。类似地，只写open要阻塞到某个其他进程为读而打开它。
+•如果指定了0_NONBLOCK，则只读open立即返回。但是，如果没有进程已经为读而打开 一个FIFO,那么只写open将出错返回-1,其errno是ENXIO。
+类似于管道，若用write写一个尚无进程为读而打开的FIFO，则产生信号SIGPIPE。若某个 FIFO的最后一个写进程关闭了该FIFO,则将为该FIFO的读进程产生一个文件结束标志。
+一个给定的FIFO有多个写进程是很常见的。这就意味着如果不希望多个进程所写的数据互 相穿插，则需考虑原子写操作。(在17.2.2节中将说明解决此问题的一种方法。)正如对于管道 一样，常量PIPE_BUF说明了可被原子地写到FIFO的最大数据量。
+FIFO有下面两种用途：
+(3)	FIFO由shell命令使用以便将数据从一条管道线传送到另一条，为此无需创建中间临时 文件。
+(4)	FIFO用于客户进程-服务器进程应用程序中，以在客户进程和服务器进程之间传递数据。 我们各用一个例子来说明这两种用途。
+实例：用FIFO复$»蜱出流
+HFO可被用于复制串行管道命令之间的输出流，于是也就不需要写数据到中间磁盘文件中 (类似于使用管道以避免中间磁盘文件)。管道只能用于进程间的线性连接，然而，因为FIFO具 有名字，所以它可用于非线性连接。
+考虑这样一个操作过程，它需要对一个经过过滤的输入流进行两次处理。图15-9表示了这 种安排。
+入件 输文
+图15-9对一个经过过滤的输人流进行两次处理
+使用FIFO以及UNIX系统程序tee(l),就可以实现这样的过程而无需使用临时文件。(tee 程序将其标准输入同时复制到其标准输出以及其命令行中包含的命名文件中。)
+mkfifo fifol prog3 < fifol &
+progl < infile | tee fifol | prog2
+我们创建FIFO，然后在后台启动prog3，它从FIFO读数据。然后启动progl，用tee将其输出 发送到FIFO和prog2。图15-10显示了有关安排。
+
+ 
+414 第15章进程间通信
+ 
+图15-10使用FIFO和tee将一个流发送到两个进程	□
+实例：客户进程-服务器进程使用FIFO进行通信
+FIFO的另一个应用是在客户进程和服务器进程之间传送数据。如果有一个服务器进程，它 与很多客户进程有关，则毎个客户进程都可将其请求写到一个该服务器进程创建的众所周知的 FIFO中(“^所周知”的意思是：所有需与服务器进程联系的客户进程都知道该FIFO的路径名)。 图15-11显示了这种安排。因为对于该FIFO有多个写进程，客户进程发送给服务器进程的请求 _其长度要小于PIPE_BUF字节。这样就能避免客户多fwrite之间的交错。
+在这种类型的客户进程-服务器进程通信中使用FIFO的问题是：服务器进程如何将回答送 回各个客户进程。不能使用单个FIFO,因为服务器进程会发出对各个客户进程请求的响应，而 请求者却不可能知道什么时候去读才能恰如其分地读到对它的响应。一种解决方法是毎个客户 进程都在其请求中包含它的进程ID。然后服务器进程为毎个客户进程创建一个FIFO,所使用的 路径名是以客户进程的进程ID为基础的。例如，服务器进程可以用名字/tmp/servl.XXXXX 创建FIFO,其中XXXXX被替换成客户进程的进程ID。图15-12显示了这种安排。
+ 
+__	图15-11客户进程用FIFO向	图15-12客户进程-服务器进程用FIFO进行通信
+岡	服务器进程发送请求
+这种安排可以工作，但也有一些不足之处。其中之一是服务器进程不能判断一个客户进程 是否崩溃终止，这就使得客户进程专用的FIFO会遗留在文件系统中。另一个不足之处是服务器 进程必须捕捉SIGPIPE信号，因为客户进程在发送一个请求后没有读取响应就可能终止，于是 留下一个只有写进程(服务器进程)而无读进程的客户进程专用FIFO。在17.2.2节中我们将讨 论已装配的基于STREAMS的管道以及connld，那时会说明解决此种问题更加妥善的方法。 按照图15-12中的安排’如果服务器进程以只读方式打开众所周知的FIFO (因为它只需读
+
+ 
+15.6 XSI IPC 415
+该FIFO),则毎当客户进程数从1变成0时，服务器进程就将在FIFO中读到一个文件结束标记。 为使服务器进程免于处理这种情况，一种常用的技巧是使服务器进程以读-写方式打开其FIFO (见习题15.10)。	口
+15.8	XSI IPC
+有三种IPC我们称作XSI IPC，即消息队列、信号量以及共享存储器，它们之间有很多相似 之处。以下各节将说明这些IPC的各自特殊功能，本节先介绍它们相类似的特征。
+XSI IPC源自系统V的IPC功能，二者密切相关。后者源自于1970年的一种称为Columbus UNIX的 AT&T内部版本，后来它们被加到系统V上。由于XSI丨PC不使用文件系统名字空间.而是构造了它们 自己的名字空间，为此常常受到批评。
+回亿表15-1,消息队列、信号量及共享存储器定义在Smgfe UNIX Specification的XSI扩展中。
+15.6.1标识符和键
+毎个内核中的IPC结构(消息队列、信号量或共享存储段)都用一个非负整数的标识符 (identifier)加以引用。例如，为了对一个消息队列发送或取消息，只需要知道其队列标识符。 与文件描述符不同，IPC标识符不是小的整数。当一个IPC结构被创建，以后又被删除时，与这 种结构相关的标识符连续加1,直至达到一个整型数的最大正值，然后又回转到0。
+标识符是IPC对象的内部名。为使多个合作进程能够在同一IPC对象上会合，需要提供一个 外部名方案。为此使用了键(key),毎个IPC对象都与一个键相关联，于是键就用作为该对象 的外部名。
+无论何时创建IPC结构(调用msgget、semget或shmget),都应指定一个键，键的数据 类型是基本系统数据类型key_t，通常在头文件<SyS/typeS.h>中被定义为长整型。键由内 核变换成标识符。
+有多种方法使客户进程和服务器进程在同一 IPC结构上会合：
+⑴服务器进程可以指定键IPC_PRIVATE创建•个新IPC结构，将返回的标识符存放在某 处(例如一个文件)以便客户进程取用。键IPC_PRIVATE保证服务器进程创建-个新IPC结构。 这种技术的缺点是：服务器进程要将整型标识符写到文件中，此后客户进程又要读文件取得此 标识符。
+IPC_PRIVATF键也可用于父、子进程关系。父进程指定IPC_PRIVATE创建一个新IPC结 构，所返回的标识符在调用fork后可由子进程使用。接着，子进程又可将此标识符作为exec 函数的-个参数传给一个新程序。
+(4)	在一个公用头文件中定义一个客户进程和服务器进程都认可的键。然后服务器进程指 定此键创建一个新的IPC结构。这种方法的问题是该键可能已与一个IPC结构相结合，在此情况 下，get函数(msgget、semget或shmget)出错返回。服务器进程必须处理这一错误，删 除已存在的IPC结构，然后试着再创建它。
+(5)	客户进程和服务器进程认同一个路径名和项目ID	(项目ID是0~255之间的字符值)，接 着调用函数ftok将这两个值变换为一个键。然后在方法(2)中使用此键。ftok提供的唯一服务 就是由一个路径名和项目ID产生一个键。
+
+ 
+416 第15章进程间通信
+owner's effective user id */
+owner,s effective group id */
+creatorf s effective user id */
+creator's effective group id */
+access modes */
+毎种实现在其ipc_perin结构中会包括另外一些成员。如欲了解你所用系统中它的完整定义， 请参见< sys/ipc.h>0
+在创建IPC结构时，对所有字段都賦初值。以后，可以调用msgctl、semctl或shmctl 修改uid、gid和mode字段。为了改变这些值，调用进程必须是IPC结构的创建者或超级用户。 更改这些字段类似于对文件调用chown和chmod。
+mode字段的值类似于表4-5中所示的值，但是对于任何IPC结构都不存在执行权限。另外,
+
+#include <sys/ipc.h>
+key_t ftok(const char *path, int id)；
+返回值：若成功则返回键，若出错则返回(key_t)-1
+pa伙参数必须引用一个现存文件。当产生键时，只使用W参数的低8位。 ftok创建的键通常是用下列方式构成的：按给定的路径名取得其stat结构(见4.2节)， 从该结构中取出部分st_dev和St_ino字段，然后再与项目ID组合起来。如果两个路径名引用 两个不间的文件，那么，对这两个路径名调用ftok通常返回不间的键。但是，因为i节点号和 键通常都存放在长整型中，于是创建键时可能会丢失信息。这意味着，如果使用同一项目ID, 那么对于不间文件的两个路径名可能产生相间的键。
+三个get函数(msgget、semget和shmget)都有两个类似的参数：一个key和一个整型 flag。如若满足下列两个条件之一，则创建一个新的IPC结构(通常由服务器进程创建)：
+•	Jkey 是 IPC 一 PRIVATE,
+•	&：y当前未与特定类型的IPC结构相结合，并旦/Zflg中指定了IPC_CREAT位。
+为访问现存的队列(通常由客户进程进行)，必须等于创建该队列时所指定的键，并且不应 指定 IPC_CREAT0
+注意，为了访问一个现存队列，决不能指定IPC_PRIVATE作为键。因为这是一个特殊的 键值，它总是用于创建一个新队列。为了访问一个用IPC_PRIVATE键创建的现存队列，一定 要知道与该队列相结合的标识符，然后在其他IPC调用中(例如msgsnd和msgrcv)使用该标 识符。
+如果希望创建一个新的IPC结构，而且要确保不是引用具有间一标识符的一个现行IPC结构， 那么必须在/1叩中同时指定IPC_CREAT和IPC—EXCL位。这样做了以后，如果IPC结构已经存 在就会造成出错，返回EEXIST (这与指定了0_CREAT和0_EXCL标志的open相类似)。
+15.6.2权限结构
+XSI IPC为毎一个IPC结构设置了一个ipC_perm结构。该结构规定了权限和所有者。它至 少包括下列成员：
+truct ipc_perm { uid—t uid； /* gid—t gid； /* uid—t cuid； /* gid__t eg id； /* mode一t mode； /*
+ 
+15.6 XSI IPC 417
+消息队列和共享存储使用术语读(read)和写(write),而信号量则用术语读(rend)和更改 (alter)。表15-2中对每种IPC说明了6种权限。
+表15-2 XSMPC权限
+权限	位 i
+用户读	0400
+用户写(更改)	0200
+组读	0040
+组写(更改)	0020
+其他读	0004
+其他写(更新)	0002
+某些实现定义了表示每种权限的符号常量，但是这些常量并不包括在Single UNIX Specification 中。
+15.6.3结构限制
+三种形式的XSI IPC都有内置限制(built-in limit)。这些限制的大多数可以通过重新配置内 核而加以更改。当叙说每种IPC时，我们都会指出它的限制。
+在报告和修改限制方面，每种平台都提供它自己的方法。FreeBSD 5_2.1、Linux 2.4.22和Mac OS X 10.3提供了 sysctl今令，用该命令观察和修改内核fc置参数。Solaris9修改内核fc置参数的方法是， 修改文件/etc/system,然后重启动。
+在Linux中，你可以运行ipcs -1以显示IPC相关的限制。在FreeBSD中，等效的命令是ipcs -T。 在Solaris中，运行sysdef -i则可找到可调节参数。
+15.6.4优点和缺点
+XSI IPC的主要问题是：IPC结构是在系统范围内起作用的，没有访问计数。例如，如果进 程创建了一个消息队列，在该队列中放入了几则消息，然后终止，但是该消息队列及其内容并 不会被删除。它们余留在系统中直至出现下述情况：由某个进程调用msgrcv或msgctl读消息 或删除消息队列，或某个进程执行ipcrm(l)命令删除消息队列，或由正在再启动的系统删除消 息队列。将此与管道相比，当最后一个访问管道的进程终止时，管道就被完全地删除了。对于 FIFO而言，虽然当最后一个引用FIFO的进程终止时其名字仍保留在系统中，直至显式地删除 它，但是留在HFO中的数据却在此时全部被删除，于是也就徒有其名了。
+XSI IPC的另一个问题是：这些IPC结构在文件系统中没有名字。我们不能用第3、第4章中 所述的函数来访问它们或修改它们的特性。为了支持它们不得不增加了十几条全新的系统调用 (msgget、semop、shmat等)。我们不能用Is命令见到IPC对象，不能用rm命今删除它们， 也不能币chmod命令更改它们的访问权限。干是，就不得不增加新的命令ipcs(l)和 ipcrm(l)。
+因为这些IPC不使用文件描述符，所以不能对它们使用多路转接I/O函数：select和poll。 这就使得难于一次使用多个IPC结构，以及在文件或设备I/O中使用IPC结构。例如，没有某种 形式的忙-等待循环，就不能使一个服务器进程等待将要放在两个消息队列任一个中的消息。
+國
+
+ 
+418 第15幸进程间通信
+Andrade、Carges和Kovach[1989]对使用系统V丨PC的一个事务处理系统进行了综述。他们 认为系统V IPC使用的名字空间(标识符)是一个优点而不是前面所说的问题，理由是使用标 识符使一个进程只要使用单个函数调用(msgsnd)就能将一个消息发送到一个消息队列，而 其他形式的IPC则通常要求open、write和close。这种论点是错误的。为了避免使用键和调 用msgget,客户进程总要以某种方式获得服务器进程队列的标识符。分派给特定队列的标识 符，取决于在创建该队列时有多少消息队列已经存在，也取决于自内核自举以来，内核中将分 配给新队列的表项已经使用了多少次。这是一个动态值，不能被猜出或事先存放在一个头文件 中。正如15.6.1节所述，至少服务器进程应将分配给队列的标识符写到一个文件中以便客户进 程读取。
+这些作者列举的消息队列的其他优点是：(a)可靠，(b)流是受控的，(c)面向记录，(d)可 以用非先进先出方式处理。正如在14.4节中所见，STREAMS也具有所有这些优点，两者之间 的差别是，在向流发送数据之前需要一个open,在结束时需要一个close。表15-3对这些不同 形式IPC的某些特征进行了比较。
+表15-3不同形式IPC之间的特征比较
+IPC类型	无连接？	可靠？	流控制？	记录？	消息类型或优先级？
+消息队列	否	是	I 是	是	是
+STREAMS	否	是	是	是	是
+UNIX域流套接字	否	是	是	否	否
+UNIX域数据报套接字	是	是	否	是	否
+FIFO (非STREAMS)	否	是	是	否	否
+(第16章将对UNIX流和数据报套接字进行说明。17.3节将说明UNIX域套接字。)表15-3 中的“无连接”指的是无需先调用某种形式的打开函数就能发送消息的能力。正如前述，因 为需要有某种技术以获得队列标识符，所以我们并不认为消息队列具有无连接特性。因为所 有这些形式的IPC都限制用在单主机上，所以它们都是可靠的。当消息通过网络传送时，丢 失消息的可能性就要加以考虑。“流控制”指的是：如果系统资源(缓冲区)短缺或者如果 接收进程不能再接收更多消息，则发送进程就要休眠。当流控制条件消失时，发送进程应自 动地被唤醒。
+表15-3中没有表示的一个特征是：IPC设施能否自动地为每个客户进程创建一个到服务器 进程的唯一连接。第17章将说明’ STREAMS以及UNIX流套接字可以提供这种能力。
+下面三节顺次对三种形式的XSI IPC进行详细说明。
+15.7消息队列
+消息队列是消息的链接表，存放在内核中并由消息队列标识符标识。在本节中，我们把消息 队列简称为队列(queue),其标识符为队列ID (queue ID)。
+Single UNIX Specification在其实时扩展的消息传送选项中包括一种替代的IPC消息队列本书不 讨论实时扩展
+msgget用于创建一个新队列或打开一个现存的队列。msgsnd将新消息添加到队列尾端。 每个消息包含一个正长整型类型字段，一个非负长度以及实阮数据字节(对应于长度)，所有
+
+ 
+15.7消息队列 419
+这些都在将消息添加到队列时，传送给msgsnd。msgrcv用于从队列中取消息。我们并不一定 要以先进先出次序取消息，也可以按消息的类型字段取消息。
+每个队列都有一个msqid—ds结构与其相关联：
+struct msqid一ds
+struct ipc_perm	msg_perm；	/*
+msgqnum_t	msg_qnum；	/*
+msglen_t	msg—qbytes；	/*
+pid一 t	msg_lspid；	/*
+pid_t	msg__lrpid；	/*
+time_t	msg_stime；	/*
+time 一 t	msg_rtime；	/*
+time_t	msg_ctime；	/*
+/* see Section 15.6.2 */
+# of messages on queue */ max # of bytes on queue */ pid of last msgsnd() */ pid of last msgrcv{) */ last-msgsnd() time */ last-msgrcv() time */ last-change time */
+此结构规定了队列的当前状态。结构中所示的各成员是由Single UNIX Specification定义的。具 体实现可能包括标准中没有定义的另一些字段。
+表15-4列出了影响消息队列的系统限制。表中“notsup”表示相关平台不支持该特征， “derived”表示这种限制是从其他限制导出的。例如，在Linux系统中，消息最大数基于队列最 大数值和队列中允许数据量的最大值。如果最短消息长度是1字节，则系统范围内的消息数限 制是最大消息队列数x队列的最大长度(字节)。按表15-4中给出的数据，Linux默认配置的最 大消息数(系统范围内)是262 144。(即使一个消息可能包含0字节数据，Linux也将其处理为 如同包含1字节那样，其目的是限制队列中的消息数。)
+表15-4影响消息队列的系统限制
+说明	典型值
+	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+可发送最长消息的卞节数
+一个特定队列的最大字节数(亦即队列中所有消息之和) 系统中最大消息队列数 系统中最大消息数	16 384 2 048 40 40	8 192 16 384 16
+derived	notsup
+notsup
+notsup
+notsup	2 048 4096 50 40
+回忆表15-1, Mac OS X 10.3不支持XSI消息队列。因为Mac OS X部分地基于FreeBSD.而 FreeBSD支持消息队列，所以使Mac OS X支持消息队列是有可能的。碲实，一个良好的因特网搜索引 擎将提供指针，指向Max OS X的XSm息队列的第三方端口 .
+调用的第一个函数通常是msgget,其功能是打开一个现存队列或创建一个新队列。
+#include <sys/msg.h>
+int msgget (key一t key, int flag);
+返回值：若成功则返回消息队列ID,若出错则返回-1
+15.6.1节说明了将变换成一个标识符的规则，并且讨论是否创建一个新队列或访问一个现存 队列。当创建一个新队列时，初始化msqid—ds结构的下列成员：
+•	ipc_perm结构按15.6.2节中所述进行初始化。该结构中mode成员按/Zag中的相应权限位
+
+ 
+420 第15章进程间通信
+设置。这些权限用表15-2中的常量指定。
+•msg—gnum、msg_lspid、msg一lrpid、msg_stime和msg_rtime都设置为0。 •msg_ctime设置为当前时间。
+•	msg—gbytes设置为系统限制值。
+若执行成功，msgget返回非负队列ID。此后，该值就可被用于其他三个消息队列函数。
+msgctl函数对队列执行多种操作。它和另外两个与信号量和共享存储有关的函数 (semctl和shmctl)是XSI IPC的类似于ioctl的函数(亦即垃圾桶函数)。
+#include <sys/msg.h>
+int msgctl {int mscjid, int cmd, struct msqid_ds *buf)；
+返回值：若成功则返回0.若出错则返回-1
+参数说明对由指定的队列要执行的命令：
+IPC_STAT取此队列的msgid_ds结构，并将它存放在如/指向的结构中。
+IPC_SET 按由fcM/指向结构中的值，设置与此队列相关结构中的下列四个字段： msg_perm-uid、msg^perm.gid、msg_per^l•^lode和msg一qbytesC)此 命令只能由下列两种进程执行：一种是其有效用户ID等于msg_perm. cuid 或msg_perm.uid,另一种是具有超级用户特权的进程。只有超级用户才能 增加msg_qbytes的值。
+IPC一RMID从系统中删除该消息队列以及仍在该队列中的所有数据。这种删除立即生效。
+仍在使用这一消息队列的其他进程在它们下一次试图对此队列进行操作时，将 出错返回EIDRM。此命令只能由下列两种进程执行：一种是其有效用户ID等于 msg_perm.cuid或msg_perm.uid,另一种是具有超级用户特权的进程。 这三条命令(IPC—STAT、IPC_SET和IPC_RMID)也可用于信号量和共享存储。
+调用msgsnd将数据放到消息队列中。
+#include <sys/msg.h>
+int msgsnd {int msqid, const void *ptr, size_t tibytes, int flag);
+返回值：若成功则返回0，若出错则返回-】
+正如前面提及的，每个消息都由三部分组成，它们是：正长整型类型字段、非负长度(nbytes) 以及实阮数据字节(对应于长度)。消息总是放在队列尾端。
+■参数指向一个长整型数，它包含了正的整型消息类型，在其后紧跟着消息数据。(若 nbytes^O,则无消息数据。)若发送的最长消息是512字节，则可定义下列结构：
+struct mymesg {
+long mtype；	/* positive message type */
+char mtext [512] ； /* message data, of length nbytes */
+于是，pr就是一个指向1^1^39结构的指针。接收者可以使用消息类型以非先进先出的次序取 消息。
+某些平台既支持32位环境，又支持64位环境。这影响到长整型和指针的大小。例如，在64位 SPARC系统中，Solaris允许32位和64位应用同时存在。如果一个32位应用经由管道戈套接字要与64位
+
+ 
+15.7消息队列 421
+应用交换此结构，那幺，因为在32位应用中，长整型的大小是4字节，而在64位应用中.长整型的大小 是8字节，这就造成了问题。这意味着，32位应用期望mtext字段在结构起始地址后的第4个字节处开 始，而64位应用则期望mtext字段在结构起始地址后的第8个字节处开始。在这种情况下，64位应用的 mtype字段的一部分会被32位应用视为mtext字段的组成部分，而32位应用的mtext字段的头4个字节 会破64位应用解释为mtype字段的组成部分„
+但是，对XSI消息队列而言，这种问题是不会出现的。Solaris实现IPC系统调用的32位版本和64位 版本，但两者的入口点不同。这些系统调用知道如何处理32位应用与64位应用的通信操作，并对类型 字段作特殊处理以避免它干扰消息的数极部分。唯一可能出问题的是，当64位应用向32位应用发送一 消息时，如果它在8字节类型字段*设置的值大于32位应用中4字节类型字段可表示的值，那幺32位应 用在其mtype字段中得到的是一个截短了的值，于是也就丢失了信息。
+参数/7叹的值可以指定为IPC_NOWAIT。这类似于文件I/O的非阻塞I/O标志(见14.2节)。 若消息队列已满(或者是队列中的消息总数等于系统限制值，或队列中的字节总数等于系统限 制值)，则指定IPC_NOWAIT使得msgsnd立即出错返回EAGAIN。如果没有指定IPC_NOWAIT， 则进程阻塞直到下述情况出现为止：有空间可以容纳要发送的消息，从系统中删除了此队列， 或捕捉到一个信号，井从信号处理程序返回。在第二种情况下，返回EIDRM (“标识符被删除”)。 最后一种情况则返回EINTR。
+注意，对删除消息队列的处理不是很完善。因为对每个消息队列并没有设置一个引用计数 器(对打开文件则有这种计数器)，所以删除一个队列会造成仍在使用这一队列的进程在下次 对队列进行操作时出错返回。信号量机制也以同样方式处理其删除。相反，删除一个文件时， 要等到使用该文件的最后一个进程关闭了它的文件描述符后，才能删除文件中的内容。
+当msgsnd成功返回，与消息队列相关的msgid_ds结构得到更新，以标明发出该调用的 进程ID (msg.lspid),进行该调用的时间(msg_stime),并指示队列中增加了一条消息 (msg-qnum)0
+msgrcv从队列中取用消息：
+#include <sys/msg.h>
+ssize_t msgrcv(int msqid, void *ptrf size一t nbytes• long type, int flag)；
+返回值：若成功则返回消息的数据部分的长度，若出错则返回-1
+如同msgsnd中一样，pfr参数指向一个长整型数(返回的消息类型存放在其中)，跟随其后的是 存放实际消息数据的缓冲区。兑明数据缓冲区的长度。若返回的消息大于而且在 刀叫中设置了MSG_NOERROR,则该消息被截短。(在这种情况下，不通知我们消息截短了，消 息的截去部分被丢弃。)如果没有设置这一标志，而消息又太长，则出错返回E2BIG (消息仍 留在队列中)。
+参数07^使我们可以指定想要哪一种消息：
+type == 0返回队列中的第一个消息。
+type> 0 返回队列中消息类型为ryw的第一个消息。
+type< 0 返回队列中消息类型值小于或等干07^绝对值的消息，如果这种消息有若干个， 则取类型值最小的消息。
+直非0用于以非先进先出次序读消息。例如，若应用程序对消息赋优先权，那么0^就
+
+ 
+422 第15幸进程间通信
+可以是优先权值。如果一个消息队列由多个客户进程和一个服务器进程使用，那么字段可 以用来包含客户进程的进程ID (只要进程ID可以存放在长整型中)。
+可以指定//叹值为IPC_NOWAIT，使操作不阻塞。这使得如果没有所指定类型的消息，则 msgrcv返回-1, errno设置为ENOMSG。如果没有指定IPC_NOWAIT，则进程阻塞直至如下 情况出现才终止：有了指定类型的消息，从系统中删除了此队列(出错则返回-1且errno置为 EIDRM),或捕捉到一个信号并从信号处理程序返回(msgrcv返回-1， errno设置为 EINTR)。
+msgrcv成功执行时，内核更新与该消息队列相关联的msgid_ds结构，以指示调用者的 [HH进程ID (msg—lrpid)和调用时间(msg_rtime),并将队列中的消息数(msg_qnum)减1。
+实例：消息队列与流管道的耗时比较
+如若需要客户进程和服务器进程之间的双向数据流，可以使用消息队列或全双工管道。 (回忆表15_1，通过UNIX域套接字机制(17.3节)，全双工管道是可用的，而某些平台通过 pipe函数提供全双工管道。)
+表15-5显示了在Solaris上三种技术在时间方面的比较，这三种技术是：消息队列、基于 STREAMS的管道和UNIX域套接字。测试程序先创建IPC通道，调用fork,然后从父进程向子 进程发送约200MB数据。数据发送的方式是：对于消息队列，调用lOOOOC^msgsnd，每个消 息长度为2 000字节，对于基于STREAMS的管道，调用100 000次write,每次写2 000字节。 时间都以秒为单位。
+表15-5在Solaris上三种IPC的时间比较
+操作	用 户	系统	时钟
+消息队列	0.57	3.63	4.22
+STREAMS 管道	0.50	3.21	3.71
+UNIX域套接字	0.43	4.45	5.59
+从这些数字中可见，消息队列原来的实施目的是提供比一般IPC更髙速度的进程通信方法， 但现在与其他形式的IPC相比，在速度方面已经没有什么差别了(事实上，基于STREAMS的管道 快于消息队列)。(在原来实施消息队列时，唯一的其他形式IPC是半双工管道。)考虑到使用消息 队列具有的问题(见15.6.4节)，我们得出的结论是，在新的应用程序中不应当再使用它们.□
+15.8信号量
+信号量(semaphore)与已经介绍过的IPC机构(管道、FIFO以及消息列队)不同。它是一 个计数器，用于多进程对共享数据对象的访问。
+Single UNIX Specification在其实时扩展的信号量选项中，包括了信号量接口的替代集。本书不讨 论这种接口。
+为了获得共享资源，进程需要执行下列操作：
+(4)	测试控制该资源的信号量。
+(5)	若此信号量的值为正，则进程可以使用该资源。进程将信号量值减1，表示它使用了一 个资源单位。
+
+ 
+15.8信号量 423
+see Section 15.6.2 */
+#	of semaphores in set */ last-semop() time */ last-change time */
+semaphore value, always >= 0 */ pid for last operation */
+#	processes awaiting semval>curval */
+#	processes awaiting semval==sO */
+\M
+struct {
+unsigned short	semval；
+pid_t	sempid；
+unsigned short	semncnt； unsigned short semzcnt；
+struct semid_ds {
+struct ipc_perm	sem_perm;
+unsigned short	sem_nsems;
+time_t	sem_otime；
+time t	sem ctime；
+Single UNIX Specification定义了上面所示的各字段，但是具体实现可在semid_ds结构中定义 添加的成员。
+每个信号量由一个无名结构表示，它至少包含下列成员：
+(6)	若此信号量的值为0，则进程进入休眠状态，直至信号量值大于0。进程被唤醒后，它 返回至第⑴步^	_
+当进程不再使用由一个信号量控制的共享资源时，该信号量值增1。如果有进程正在休眠 等待此信号量，则唤醒它们。
+为了正确地实现信号量，信号量值的测试及减1操作应当是原子操作。为此，信号量通常 是在内核中实现的。
+常用的信号量形式被称为二元信号量或双态信号量(binary semaphore)。它控制单个资源，
+初始值为1。但是一般而言，信号量的初值可以是任一正值，该值说明有多少个共享资源单位 可供共享应用。
+遗憾的是，XSI的信号量与此相比要复杂得多。三种特性造成了这种并非必要的复杂性：
+(4)	信号量并非是单个非负值，而必需将信号量定义为含有一个或多个信号量值的集合。
+当创建一个信号量时，要指定该集合中信号量值的数量。
+(5)	创建信号量(semget)与对其赋初值(semctl)分开。这是一个致命的弱点，因为 不能原子地创建一个信号量集合，并且对该集合中的各个信号量值陚初值。
+(6)	即使没有进程正在使用各种形式的XSI	IPC,它们仍然是存在的。有些程序在终止时并 没有释放已经分配给它的信号量，所以我们不得不为这种程序担心。下面将要说明的undo功 能就是假定要处理这种情况的。
+内核为每个信号量集合设置了一个semid_dS结构：
+表15-6列出了影响信号量集合的系统限制(见15.6.3节)。
+要获得一个信号量ID,要调用的第一个函数是seraget。
+#include <sys/sem.h>
+int semget (key—t key, int nsems, int flag)；
+返回值：若成功则返回信号量ID,若出错则返回-1
+/*
+"
+/*
+/*
+/*
+/*
+/*
+
+ 
+424 第15章进程间通信
+表15-6影响倍号量的系统限制
+说明		典型	值	
+	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+任一信号量的最大值	32 767	32 767	32 767	32 767
+任一信号量的最大的终止时调整值	16 384	32 767	16 384	16 384
+系统中信号量集的最大数	10	128	87 381	10
+系统中信号量的最大数	60	32 000	87 381	60
+每个信号量集中的最大信号量数	60	250	87 381	25
+系统中undo结构的最大数	30	32 000	87 381	30
+每个undo结构中的最大undo项数	10	32	10	10
+每个semop调用中的最大操作项数	100	32	100	10
+15.6.1节说明了将变换为标识符的规则，讨论了是否创建一个新集合，或是引用一个现 存的集合。创建一个新集合时，对semid_ds结构的下列成员陚初值：
+•按15_6_2节中所述，对ipc_perm结构陚初值。该结构中的mode被设置为/Zag中的相应权 限位。这些权限是用表15-2中的常量设置的。
+•	sem_otime 设置为 0。
+•sem 一c time设置为当前时间。
+•	sem_nsems设置为财6附。
+是该集合中的信号量数。如果是创建新集合(一般在服务器进程中)，则必须指定 Awe/zw。如果引用一个现存的集合(一个客户进程)，则将nm/w指定为0。 seme ti函数包含了多种信号量操作。
+#include <sys/sem.h>	
+int semctl (int semid, int semnum, int cmd, .../* union semun arg */)；	返回值：(见下)
+注意，依赖于所请求的命令，第四个参数是可选的，如果使用该参数，则其类型是semun,它 是多个特定命令参数的联合(union〉：
+union semun {
+int val； /* for SETVAL */	
+struct semid 一ds *buf； /* for IPC_STAT and IPC—SET */ unsigned short *array； /* for GETALL and SETALL */
+注意，这是一个联合，而非指向联合的指针。
+cmd参数指定下列10种命令中的一种，在指定的信号量集合上执行此命令。其中有5 条命令是针对一个特定的信号量值的，它们用semnMm指定该信号量集合中的一个成员。 semnum值在0和nsems-1之间(包括0和财例w-1)。
+IPC.STAT对此集合取semid_ds结构，并存放在由#指向的结构中。
+IPC一SET 按由•指向结构中的值设置与此集合相关结构中的下列三个字段值： sem_perm.uid, sem_perm.gid和sem_perm.mode。此命令只能由下列 两种进程执行：一种是其有效用户ID等于sem_perm . cuid或
+
+ 
+15.8信号量 425
+sem_perm.uid的进程;另一种是具有超级用户特权的进程。
+IPC_RMID从系统中删除该信号量集合。这种删除是立即发生的。仍在使用此信号量集 合的其他进程在它们下次试图对此信号量集合进行操作时，将出错返回 EIDRM。此命令只能由下列两种进程执行：一种是其有效用户ID等于 sem_perm.cuid或sem_perm.uid的进程：另一种是具有超级用户特权的 进程。
+GETVAL 返回成员 sewnw/M 的 semval 值。
+SETVAL 设置成员smnww的semval值。该值由arg.vaZ指定。
+GETPID 返回成员sewnw/M 的 sempid 值。
+GETNCNT 返回成员 sewnw/M 的 semncnt 值。
+GETZCNT 返回成员 sewnw/M 的 semzcnt 值。
+GETALL 取该集合中所有信号量的值，并将它们存放在由flrg.array指向的数组中。
+SETALL 按^叹似叩指向的数组中的值，设置该集合中所有信号量的值。
+对于除GETALL以外的所有GET命令，semctl函数都返回相应的值。其他命令的返回值为0。
+函数semop自动执行信号量集合上的操作数组，这是个原子操作。
+#include <sys/sem.h>
+int semop (int semid, struct senibuf semoparrayU , size—t nops)；
+返回值：若成功则返回0，若出错则返回-1
+参数印array是一个指针，它指向一个信号量操作数组，信号量操作由sembuf结构表示：
+struct sembuf {
+unsigned short sem__num
+short	sem__op;
+short	sem fig
+}； 一 参数M/w规定该数组中操作的数量(元素数)。
+对集合中每个成员的操作由相应的sem_oP值规定。此值可以是负值、0或正值。(下面的 讨论将提到信号量的undo标志。此标志对应于相应sem_flg成员的SEM_UND0位。)
+(4)	最易于处理的情况是sem_oP为正。这对应于进程释放占用的资源数。sem_op值加到 信号量的值上。如果指定了undo标志，则也从该进程的此信号量调整值中减去Sem_op。
+(5)	若sem_op为负，则表示宴获取由该信号量控制的资源。
+如若该信号量的值大于或等于sem_oP的绝对值(具有所需的资源)，则从信号量值中减去 Sem_oP的绝对值。这保证信号量的结果值大于或等于0。如果指定了undo标志，则sem_0p的 绝对值也加到该进程的此信号量调整值上。
+如果信号量值小于sem_oP的绝对值(资源不能满足要求)，贝IJ:
+(c)	若指定了IPC_NOWAIT,则semop出错返回EAGAIN。
+(d)	若未指定IPC—NOWAIT，则该信号量的semncnt值加1	(因为调用进程将进入休眠状态)， 然后调用进程被挂起直至下列事件之一发生：
+⑴此信号量变成大于或等于sem_oP的绝对值(即某个进程已释放了某些资源)。此信 号量的semncnt值减1 (因为已结束等待)，并且从信号量值中减去sem_0p的绝对值。 如果指定了 undo标志,则Sem_oP的绝对值也加到该进程的此信号量调整值上。
+； /* member # in set (0, lf	nsems-1) */
+/* operation (negative, 0, or positive) */ ;/* IPC-NOWAIT, SEM_UNDO */
+國
+
+ 
+426 第15章进程间通信
+(ii)从系统中删除了此信号量。在此情况下，函数出错则返回EIDRM。
+[12]	(iii)进程捕捉到一个信号，并从信号处理程序返回。在此情况下，此信号量的
+semncnt值减1 (因为调用进程不再等待)，并且函数出错返回EINTR。
+(6)	若sem_op为0,这表示调用进程希望等待到该信号量值变成0。
+如果信号量值当前是0,则此函数立即返回。
+如果信号量值非0，贝IJ:
+(c)	若指定了	I PC_NOWAIT，则出错返回EAGAIN。
+(d)	若未指定IPC_NOWAIT,则该信号量的semzcnt值加1	(因为调用进程将进入休眠状态)， 然后调用进程被挂起，直至下列事件之一发生为止：
+(iv)	此信号量值变成0。此信号量的semzcnt值减1	(因为调用进程已结束等待)。
+(v)	从系统中删除了此信号量。在此情况下，函数出错返回EIDRM。
+(vi)	进程捕捉到一个信号，并从信号处理程序返回。在此情况下此信号量的semzcnt 值减1 (因为调用进程不再等待)，并且函数出错返回EINTR。
+semop函数具有原子性，它或者执行数组中的所有操作，或者什么也不做。
+«cit时的信号量调整
+正如前面提到的，如果在进程终止时，它占用了经由信号量分配的资源，那么就会成为一 个问题。无论何时，只要为信号量操作指定了SEM—UND◦标志，然后分配资源(sem_op值小 于0),那么内核就会记住对于该特定信号量，分配给调用进程多少资源(sem_op的绝对值)。 当该进程终止时，不论自愿或者不自愿，内核都将检验该进程是否还有尚未处理的信号量调整 值，如果有，则按调整值对相应量值进行处理。
+如果用带SETVAL或SETALL命令的semctl设置一信号量的值，则在所有进程中，对于该 信号量的调整值都设置为0。
+实例：信号量与记录锁的耗时比较
+如果多个进程共享一个资源，则可使用信号量或记录锁。对这两种技术在时间上的差别进 dH]行比较是有益的。
+若使用信号量，则先创建一个包含一个成员的信号量集合，然后对该信号量值赋初值1。 为了分配资源，以sem_op为-1调用semop,为了释放资源，则以sem_op为+ 1调用semop。 对毎个操作都指定SEM_UNDO，以处理在未释放资源条件下进程终止的情况。
+若使用记录锁，则先创建一个空文件，并且用该文件的第一个字节(无需存在)作为锁字 节。为了分配资源，先对该字节获得一个写锁：释放该资源时，则对该字节解锁。记录锁的性 质确保了当一个锁的属主进程终止时，内核会自动释放该锁。
+表15-7显示了在Linux上使用这两种不同技术进行锁操作所需的时间。在毎一种情况中，资 源都被分配，然后释放，如此循环10 000次。这同时由三个不同的进程执行。表15-7中所示的 时间是三个进程的总计，单位是秒。
+表15-7信号量锁和记录锁的时间比较
+操作	用户	系统	时钟
+带undo的信号量	0.38	0.48	0.86
+建议性记录锁	0.41	0.95	1.36
+
+ 
+15.9共享存储 427
+在Linux上，记录锁与信号量锁相比，在时间上要多耗用约60%。
+虽然记录锁慢于信号量锁，但如果只需锁一个资源(例如共享存储段)并且不需要使用 XSI信号量的所有花哨的功能，则宁可使用记录锁。理由是使用简易，且进程终止时系统会处 理任何遗留下来的锁。	口
+15.9共享存储
+共享存储允许两个或更多进程共享一给定的存储区。因为数据不需要在客户进程和服务器 进程之间复制，所以这是最快的一种ipc。使用共享存储时要掌握的唯一窍门是多个进程之间 对一给定存储区的同步访问。若服务器进程正在将数据放入共享存储区，则在它做完这一操作 之前，客户进程不应当去取这些数据。通常，信号量被用来实现对共享存储访问的同步。(不 过正如前节最后部分所述，记录锁也可用于这种场合。)
+Single UNIX Specification在其实时扩展的共享存储对象选项中，包括了访问共享存储的一套替代 接口 •在农书中不涉及该实时扩展。
+内核为毎个共享存储段设置了一个shmid_dS结构。
+struct shmidds {		
+struct ipcjperm	shtnjperm；	/* see Section 15-6.2 */
+size_t	shm_segsz；	/* size of segment in bytes */
+pid_t	shm_lpid?	/* pid of last shmopO */
+pid_t	shm 一cpid;	/* pid of creator */
+shmatt_t	shm_nattch；	/* number of current attaches */
+time—t	ghni_atime；	/* last-attach time */
+time—t	shm_dtime；	/* last-detach time */
+t ime—t	ghm_ctime；	/* last-change time */
+(按照支持共享存储段的需要，毎种实现会在shmid_ds结构中增加其他成员。)
+shniatt_t类型定义为不带符号整型，它至少与unsigned short一样大。表15-8列出了 影响共享存储的系统限制(见15.6.3节)。
+表15-8影响共享存储的系统限制
+说明	典型值
+	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+共享存储段的最大字节数 共享存储段的最小字节数 系统中共享存储段的最大段数 每个进程共享存储段的最大段数	33 554 432 1
+192
+128	33 554 432 1
+4 096 4 096	4 194 304 1
+32
+8	8 388 608 1
+100
+6
+为获得一个共享存储标识符，调用的第一个函数通常是shmget。
+#include <sys/shm.h>
+int shmget (key—t key, a±ze_z size, int flag)；
+返回值：若成功则返冋共享存储ID,若出错则返回_1
+
+ 
+428 第15章进程间通信
+15.6.1节说明了将变换成一个标识符的规则，以及是创建一个新共享存储段还是引用一个现 存的共享存储段。当创建一个新段时，初始化shmid_dS结构的下列成员：
+•	ipc_perm结构按15.6.2节中所述进行初始化。该结构中的mode成员按/Zag中的相应权限 位设置。这些权限用表15-2中的常量指定。
+•	shm_lpid、shm_nattach、shm_atime、以及shm一dtime都设置为0o
+•	shm_ctime设置为当前时间。
+•	shm_segsz设置为请求的长度(size)。
+参数是该共享存储段的长度(单位：字节)。实现通常将其向上取为系统页长的整数倍。 但是，若应用指定的hze值并非系统页长的整数倍，那么最后一页的余下部分是不可使用的。 如果正在创建一个新段(一般是在服务器进程中)，则必须指定其hze。如果正在引用一个现存 的段(一个客户进程)，则将hze指定为0。当创建一新段时，段内的内容初始化为0。 shmctl函数对共享存储段执行多种操作。
+#include <sys/shm.h>	
+int shmctl (int shmid, i	nt cmd, struct shmid一ds *buf);
+	返回值：若成功则返回0，若出错则返回-1
+cmd参数指定下列5种命令中一种，使其在指定的段上执行。
+IPC_STAT取此段的shmid_ds结构’并将它存放在由&«/指向的结构中。
+IPC_SET 按&«/指向结构中的值设置与此段相关结构中的下列三个字段：shm—perm.
+uid、shm_perm.gid以及shnuperm.mode。此命令只能由下列两种进程 执行：一种是其有效用户ID等于shm_perm. cuid或shm_perm.uid的进 程：另一种是具有超级用户特权的进程。
+IPC_RMID从系统中删除该共享存储段。因为每个共享存储段有一个连接计数 (shmid_ds结构中的shm_nattch字段)，所以除非使用该段的最后一个进程 终止或与该段脱节，否则不会实际上删除该存储段。不管此段是否仍在使用， 该段标识符立即被删除,所以不能再用shmat与该段连接。此命令只能由下列 两种进程执行:一种是其有效用户ID等于shm_perm. cuid或shm_perm .uid 的进程> 另一种是具有超级用户特权的进程。
+Linux和Solaris提供了下列另外两种命令，但它们并非Single UNIX Specification的组成部分： SHM_L0CK 将共享存储段锁定在内存中。此命令只能由超级用户执行。
+SHM一 UNLOCK 解锁共享存储段。此命令只能由超级用户执行。
+一且创建了一个共享存储段，进程就可调用shmat将其连接到它的地址空间中。
+#include <sys/shm.h>
+void * shmat (int shmid, const void *addr • int flag)；
+返回值：若成功则返回指向共享存储的指针，若出错则返回-1
+共享存储段连接到调用进程的哪个地址上与flddr参数以及在/Iflg中是否指定SHM_RND位有关。 •如果•为0，则此段连接到由内核选择的第一个可用地址上。这是推荐的使用方式。 •如果•非0，并且没有指定SHM_RND,则此段连接到•所指定的地址上。
+
+ 
+15.9共享存储 429
+•如果非0,并且指定了SHM_RND，则此段连接到mod ulus SHMLBA))所 表示的地址上。SHM_RND命令的意思是“取整”。SHMLBA的意思是“低边界地址倍数”， 它总是2的乘方。该算式是将地址向下取最近1个SHMLBA的倍数。
+除非只计划在一种硬件上运行应用程序(这在当今是不大可能的)，否则不应指定共享段 所连接到的地址。所以一般应指定flA/r为0,以便由内核选择地址。
+如果在/Iflg中指定了SHM_RDONLY位，则以只读方式连接此段。否则以读写方式连接此段。 shmat的返回值是该段所连接的实际地址，如果出错则返回-1。如果shmat成功执行，那 么内核将使该共享存储段shmid_ds结构中的shm_nattch计数器值加1。
+当对共享存储段的操作已经结束时，则调用shmdt脱接该段。注意，这并不从系统中刪除 其标识符以及其数据结构。该标识符仍然存在，直至某个进程(一般是服务器进程)调用 shmctl (带命令IPC_RM；ED)特地删除它。
+#include <sys/shm.h>	
+int shmdt (void *addr)；	
+	返回值：若成功则返回0,若出错则返回-1
+参数是以前调用shmat时的返回值。如果成功，shmdt将使相关shmid—ds结构中的 shm_nattcli计数器值减1。
+内核将以地址0连接的共享存储段放在什么位置上与系统密切相关。程序清单15-11打印一 些信息，它们与特定系统将各种不同类型的数据放在什么位置有关。
+	程序清单15-11打印各种不同类型的数据所存放的位置	
+#include "apue.h"
+#include <sys/shm.h>
+#define ARRAY一SIZE 40000 #define MALLOC_SIZE 100000 #define SHM—SIZE 100000
+#define SHM_MODE 0600 /* user read/write */
+char array[ARRAY_SIZE]； /* uninitialized data = bss */
+int
+main (void)
+{
+int shmid；
+char *ptrf *shmptr；
+printf ("array [] from %lx to %lx\nH , (unsigned long) Sear ray [0],
+(unsigned long)&array[ARRAY一SIZE])； printf("stack around %lx\n”， (unsigned long)&shmid)；
+if ((ptr = malloc(MALLOC_SIZE)) == NULL) err—sys("malloc error"); printf ("malloced from %lx to %lx\n11, (unsigned long) ptr,
+(unsigned long)ptr+MALLOC_SIZE)；
+if ((shmid = shmget(IPC—PRIVATE, SHM—SIZE, SHM一MODE)) < 0)
+
+ 
+430 第15章进程间通信
+err一sys("shmget error")； if ((shmptr = shmat(shmid, 0, 0)) == (void *)-1) err_sys (11 shmat error*')； printf("shared memory attached from %lx to %lx\n",
+(unsigned long)shmptr, (unsigned long)shmptr+SHM_SXZE)；
+if (shmctl(shmid, XPC_RMID, 0) < 0) err一sys("shmctl error")；
+exit(0)；
+}
+在一个基于Intel的Linux系统上运行此程序，其输出如下：
+$ ./a.out
+array[] from 804a080 to 8053cc0
+stack around bffff9e4
+malloced from 8053cc8 to 806c368
+shared memory attached from 40162000 to 4017a6a0
+图15-13描绘了这种情况，这与图7-3中所示的典型存储区布局类似。注意，共享存储段紧靠在
+栈之下。	□
+J命令行参数和环境变量
+•	Oxbf f f f 9e4
+	0x4017a6a0^
+>共享存储，100 000字节
+4——0x40162000J
+	0x0806c368^
+Smalloc 100 000字节
+•m	0x08053cc8 J
+^	0x08053cc0 |
+.? array[] 40 000字节
+•m	0x0804a080J
+图15-13在基干Intel的Linux系统上的存储区布局
+14.9节中曾说明mmap函数可将一个文件的若干部分映射至进程地址空间。这在概念上类似 于用shmat XSI IPC函数连接一共享存储段。两者之间的主要区别是，用mmap映射的存储段是 与文件相关联的，而XSI共享存储段则并无这种关联。
+实例：/dev/zero的存俺映射
+共享存储可由不相关的进程使用。但如果进程是相关的，则某些实现提供了一种不同的技术。
+下面说明的技术用于FreeBSD 5.2.1. Linux 2.4.22和Solans 9。Mac OS X 10.3当前并不支持将字符 设备映射至进程地址空间，
+在读设备/dev/zero时，该设备是0字节的无限资源。它也接收写向它的任何数据，但又 忽略这些数据。我们对此设备作为IPC的兴趣在于，当对其进行存储映軒叶，它具有一些特殊
+髙地址
+栈
+共享存储
+堆
+非初始化数据
+初始化数据
+正文
+低地址
+
+ 
+15.9共享存储 431
+的性质：
+•创建一个未名存储区，其长度是mmap的第二个参数，将其向上取整为系统的最近页长。
+•存储区都初始化为0。
+•如果多个进程的共同祖先进程对mmap指定了MAP_SHARED标志，则这些进程可共享此存 储区。
+程序淸单15-12是使用此特殊设备的一个例子。
+	程序清单15-12在父、子进程间使用/dev/zero存储映射I/O的IPC	
+#include "apue.h"
+#include <fcntl.h>
+#include <sys/mman.h>
+#define NLOOPS	1000
+#define SIZE	sizeof(long) /* size of shared memory area */
+static int update(long *ptr)
+{
+return((*ptr)++)； /* return value before increment */
+}
+int
+main(void)
+{
+int fd, i, counter； pid—t pid; void *area;
+if ((fd = open("/dev/zero”， 0_RDWR)) < 0) err—sys(Mopen error")； if ((area = mmap(0, SIZE, PROT一READ 丨 PROT—WRITE, MAP一SHARED, fd, 0)) =* MAP一FAILED)	-	-	-
+err一sys(nmmap error")； close(fd);	/* can close /dev/zero now that it,s mapped */
+TELL一WAIT();
+if ((pid = fork⑴ < 0) { err一sys (11 fork error")；
+} else if (pid > 0) {	/* parent */
+for (i = 0; i < NLOOPS； i += 2) {
+if ((counter = update((long *)area)) != i)
+err一quit("parent: expected %d, got %dM# i, counter)；
+TELL一CHILD(pid);
+WAIT:CHILD();
+} else {	/* child */
+for (i = 1； i < NLOOPS + 1? i += 2) {
+WAIT—PARENT();
+if ((counter = update((long *)area)) != i)
+err一quit("child: expected %d, got %d", i, counter)；
+TELL一PARENT(getppid())；
+exit(0)；
+
+ 
+432 第15章进程间通信
+它打开此/dev/zero设备，然后指定长整型的长度调用mmap。注意，一旦存储区映射成 功，就关闭此设备。然后，进程创建一个子进程。因为在调用mmap时指定了MAP—SHARED, 所以一个进程写到存储映射区的数据可由另一进程见到。(如果已指定MAP_PRIVATE，则此示 例程序不能工作。)
+然后，父、子进程交替运行，使用8.9节中的同步函数各自对共享存储映射区中的长整型数 加1。存储映射区由mmap初始化为0。父进程先对它进行增1操作，使其成为1,然后子进程对
+其进行增1操作，使其成为2,然后父进程使其成为3	注意，当在update函数中对长整型值
+增1时，因为增加的是其值，而不是指针，所以必须使用括号。
+以上述方式使用/dev/zero的优点是：在调用mmap创建映射区之前，无需存在一个实际 文件。映射/dev/zero自动创建一个指定长度的映射区。这种技术的缺点是：它只在相关进 程间起作用。但在相关进程之间使用线程(第11章和第12章)可能更为简单、有效。注意，无 论使用哪一种技术，都需对共享数据进行同步访问。	口
+实例：匿名存储映射
+很多实现提供了一种类似干/dev/zero的设施，称为匿名存储映射。为了使用这种功能， 在调用rrunap时指定MAP_AN0N标志，并将文件描述符指定为-1。结果得到的区域是匿名的(因 为它并不通过一个文件描述符与一个路径名相结合)，并且创建一个可与后代进程共享的存储区。
+本书讨论的四种平台都支持匿名存储映斯。但是注意.Linux为此定义了MAP_ANONYMOUS标志， 并将MAP.._ANON标志定义为与它相同的值以改善应用的可移植性。
+为使程序清单15-12所示程序应用这种特征，对它做了三处修改：一是删除了对干 /dev/zero的open语句，二是删除了对干fd的close语句，三是将mmap调用修改成
+if ((area = mmap(0# SIZE, PROT—READ | PROT—WRITE,
+MAP_AN0N | MAPSHARED, -1, 0)) == MAP—FAILED)
+的形式。在此调用中，指定了MAP_AN0N标志，并将文件描述符取为-1。程序的其余部分则没 有改变。	口
+最后两个例子说明了在多个相关进程之间如何使用共享存储段。如果在无关进程之间使用 共享存储段，那么有两种替换的方法。其一是应用程序使用XSI共享存储函数，另一种是使用 [540] mmap将同一文件映射至它们的地址空间，^此使用MAP—SHARED标志。
+15-10客户进程-服务器进程属性
+下面详细说明客户进程和服务器进程的某些属性，这些属性受到它们之间所使用的IPC类 型的影响。最简单的关系类型是使客户调用fork然后调用exec执行所希望的服务器进程。在 for^k之前先创建两个半双工管道使数据可在两个方向传输。图15-8是这种形式的-个例子。被 执行的服务器程序可能是设置用户ID的程序，这使它具有了特权。服务器进程查看客户进程的 实际用户ID就可以决定客户进程的身份。(回忆8.10节，从中可了解到在exec前后实际用户 和实际组ID并没有改变。)
+在这种安排下，可以构筑一个开放式服务器(open server)。( 17.5节提供了这种客户和服 务器的一种实现)。它为客户进程打开文件而不是客户进程自己调用open函数。这样就可以在
+
+ 
+15.10客户进程-服务器进程属性 433
+正常的UNIX用户/组/其他权限之上或之外，增加附加的权限检査。假定服务器进程执行的是设 置用户ID程序，这给予了它附加的权限(很可能是root权限)。服务器进程用客户进程的实际用 户ID以决定是否给予它对所请求文件的访问权限。使用这种方式，可以构筑一个服务器进程，
+它允许某种用户获得通常没有的访问权限。
+在此例子中，因为服务器进程是父进程的子进程，所以它能做的一切是将文件内容传送给 父进程。这种方式对普通文件完全够用，但是对特殊设备文件却不能工作。我们希望能做的是 使服务器进程打开所要的文件，并送回文件描述符.但是实际情况却是父进程可向子进程传送 打开文件描述符，而子进程则不能向父进程传回文件描述符(除非使用将在第17章介绍的专门 编程技术)。
+图15-12中示出了另一种类型的服务器进程。这种服务器进程是一个守护进程，所有客户进 程用某种形式的IPC与其联系。对于这种形式的客户进程-服务器进程关系，不能使用管道。要 求使用命名的IPC，例如FIFO或消息队列。对于FIFO,如果服务器进程必须将数据送回客户进 程，则对每个客户进程都要有单独使用的FIFO。如果客户进程-服务器进程应用程序只有客户 进程向服务器进程发送数据，则只需要一个众所周知的FIFO。(系统V行式打印机假脱机程序 使用这种形式的客户进程-服务器进程。客户进程是1P(1)命令，服务器进程是Ipsched守护进 程。因为只有从客户进程到服务器进程的数据流，没有任何数据需送回客户进程，所有只需使 用一个 FIFO。)
+使用消息队列则存在多种可能性：
+(3)	在服务器进程和所有客户进程之间只使用一个队列，使用消息的类型字段指明谁是消 息的接收者。例如，客户进程可以用类型字段1发送它们的消息。在请求之中应包括客户进程 的进程ID。此后，服务器进程在发送响应消息时，将类型字段设置为客户进程的进程ID。服务 器进程只接收类型字段为1的消息(msgrcv的第四个参数)，客户进程则只接收类型字段等于 它进程ID的消息。
+(4)	另一种方法是每个客户进程使用一个单独的消息队列。在向服务器进程发送第一个请_ 求之前，每个客户进程先创建它自己的消息队列，创建时使用键IPC_PRIVATE。服务器进程 也有它自己的队列，其键或标识符是所有客户进程都知道的。客户进程将其第一个请求送到服
+务器进程的众所周知的队列上，该请求中应包含其客户进程消息队列的队列ID。服务器进程将 其第一个响应送至客户进程队列，此后的所有请求和响应都在此队列上交换。
+使用这种技术的一个问题是：每个客户进程专用队列通常只有一个消息在其中——或者是 对服务器进程的一个请求，或者是对客户进程的响应。这似乎是对有限的系统资源(消息队列)
+的浪费，为此可以用一个FIFO来代替。另一个问题是服务器进程需从多个队列读消息。对于消 息队列，select和poll都不起作用。
+使用消息队列的这两种技术都可以用共享存储段和同步方法(信号量或记录锁)实现。
+这种类型的客户进程-服务器进程关系(客户进程和服务器进程是无关系进程)的问题是：
+服务器进程如何准确地标识客户进程？除非服务器进程正在执行一种非特权操作，否则服务器 进程知道客户进程的身份是很重要的。例如，若服务器进程是一个设置用户ID程序，就有这种 要求。虽然，所有这几种形式的IPC都经由内核，但是它们并未提供任何措施使内核能够标识 发送者。
+对于消息队列，如果在客户进程和服务器进程之间使用一个专用队列(于是一次只有一个 消息在该队列上)，那么队列的mSg_lSpid包含了对方进程的进程ID。但是当客户进程将请求
+
+ 
+434 第15幸进程间通信
+发送给服务器进程时，我们想要的是客户进程的有效用户ID,而不是它的进程ID。现在还没有 一种可移植的方法，在已知进程ID的情况下可以得到有效用户ID。(内核在进程表项中自然地 保持有这两种值，但是除非彻底检査内核存储空间，否则已知一个，无法得到另一个。)
+我们将在17.3节中使用下列技术,使服务器进程可以标识客户进程。这一技术既可使用FIF0、 消息队列或信号量，也可使用共享存储。在下面的说明中假定按图15-12使用了FIFO。客户进 程必须创建它自己的FIFO,并且设置该HFO的文件访问权限，使得只允许用户读，用户写。 假定服务器进程具有超级用户特权(或者它很可能并不关心客户进程的真实标识)，所以服务 器进程仍可读、写此FIFO。当服务器进程在众所周知的FIFO上接收到客户进程的第一个请求 时(它应当包含客户进程专用FIFO的标识)，服务器进程调用针对客户进程专用FIFO的stat或 fstat。服务器进程假设客户进程的有效用户ID是FIFO的所有者(stat结构的st_uid字段)。 服务器进程验证该FIFO只有用户读、用户写权限。服务器进程还应检査该FIFO的三个时间量 (stat结构中的st_atime，st_mtime和st_ctime字段)，要检査它们与当前时间是否很接 近(例如不早于当前时间15s或30s)。如果一个有预谋的客户进程可以创建一个FIFO,使另一 个用户成为其所有者，并且设置该文件的权限为用户读和用户写，那么在系统中就存在了其他 基础性的安全问题。
+为了用XSIIPC实现这种技术，回想一下与每个消息队列、信号量以及共享存储段相关的 ipc_perm结构，其中cuid和cgid字段标识IPC结构的创建者。以FIFO为例，服务器进程应 当要求客户进程创建该IPC结构，并使客户进程将访问权限设置为只允许用户读和用户写。服 务器进程也应检验与该IPC相关的时间值与当前时间是否很接近(因为这些IPC结构在显式地删 除之前一直存在)。
+在17.2.2节中，将会看到进行这种身份验证的一种更好的方法，其关键是内核提供客户进 程的有效用户ID和有效组ID。STREAMS子系统在进程之间传送文件描述符时可以做到这一点。
+15.11小结
+本章详细说明了进程间通信的多种形式：管道、命名管道(FIFO)以及另外三种IPC形式 (通常称为XSI IPC)，即消息队列、信号量和共享存储。信号量实际上是同步原语而不是IPC, 常用于共享资源(例如共享存储段)的同步访问。对于管道，我们说明了popen函数的实现， 说明了协同进程,以及使用标准I/O库缓冲机制时可能遇到的问题。
+将消息队列对全双工管道、信号量对记录锁等不同方法的耗时做了比较，然后提出了下列建 议：要学会使用管道和FM)，因为在大量应用程序中仍可有效地使用这两种基本技术。在新的应 用程序中，要尽可能避免使用消息队列以及信号量，而应当考虑全双工管道和记录锁，它们使用 起来会简单得多。共享存储段有其应用场合，而mmap函数(见14.9节)也能提供同样的功能。
+下一章将介绍网络IPC,它们使进程能够跨越计算机的边界进行通信。
+习题
+15.1在程序清单15-2父进程代码的末尾，如果删除waitpid前的close,结果将如何？
+15.2在程序清单15-2父进程代码的末尾，如果删除waitpid,结果将如何？
+15.3如果popen函数的参数是一个不存在的命令，这会造成什么结果？编写一段小程序对此 进行测试。
+
+ 
+15.11 小 结 435
+15.4删除程序清单15-9中的信号量处理程序，执行该程序并终止子进程。输入一行后，怎样 才能说明父进程是由SIGPIPE终止的？
+15.5将程序清单15-9中进行管道读、写的read和write用标准I/O库代替。
+15.6 POSIX.I加入waitpid函数的理由之一是，POSIX.I之前的大多数系统不能处理下面的 代码。
+if ((fp = popen("/bin/true", "r")} == NULL) if ((rc = system("sleep 100")) == -1) if (pclose(fp) == -1)
+若在这段代码中不使用wai tpid函数会如何？用wait代替呢？
+15.7当一个管道被写进程关闭后，解释select和poll如何处理该管道的输入描述符。编两 个测试程序，一个用select，另一个用poll，并判断答案是否正确。当一个管道的读 端被关闭时，请重做此习题以査看该管道的输出描述符。
+15.8如果popen以type为"r"执行cffKZwWng，并将结果写到标准出错输出，结果如何？
+15.9 popen函数能使shell执行它的cffuZWriVig参数，当cmdstring终止时会产生什么结果?
+(提示：画出与此相关的所有进程。)	.
+15.10大多数UNIX系统允许读写FIFO,但是POSIX.I特别声明没有定义为读写而打开FIFO。
+请用非阻塞方法实现为读写而打开FIFO。
+15.11除非文件包含敏感或机密数据，否则允许其他用户读文件不会造成损害。(不过，窥探 别人的文件总归是不良行为。)(但是，如果一个恶意进程读取了被一个服务器进程和几 个客户进程使用的消息队列中的一条消息后，会产生什么后果？恶意进程需要知道哪些 信息就可以读消息队列？
+15.12编写一段程序完成下面的工作：执行一个循环5次，在每次循环中，创建一个消息队列， 打印该队列的标识符，然后删除队列。接着再循环5次，在每次循环中利用键 IPC_PRIVATE创建消息队列并将一条消息放在队列中。程序终止后用ipcs(l)査看消息 队列。解释队列标识符的变化。
+15.13描述如何在共享存储段中建立一个数据对象的链接列表。列表指针如何保存？
+15.14画出程序清单15-12所示程序运行时下列值随时间变化的曲线图(假定在调用fork后子 进程首先运行)，这些值是：
+(4)	在父进程和子进程中的变量i,
+(5)	在共享存储区中长整型的值，
+(6)	update函数的返回值。
+15.15使用15.9节中的XSI共享存储函数代替共享存储映射区，改写程序清单15-12。
+15.16使用15.8节中XSI信号量函数改写程序清单15-12,实现父进程与子进程间的交替。
+15.17使用建议性记录锁改写程序清单15-12,实现父进程与子进程间的交替。
+固
+[544]
+
+ 
+
+ 
+

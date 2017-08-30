@@ -1,0 +1,1574 @@
+	
+
+
+
+三、问答题
+
+1.简述操作系统的概念。
+
+2.操作系统有哪些功能？
+
+3.Linux有哪些特点？
+
+4.什么是 Linux 内核版本？什么是 Linux 的发行版本？常见的发行版本有哪些？
+
+5.GRUB是什么程序？它的作用是什么？
+
+6．请说出至少4种Linux发行版，并且说明各自是基于哪种软件包的管理方式。
+
+7．Linux内核x.y.z形式的版本号代表什么意思?
+
+8.简述网络配置并使计算机能够进行网页浏览的步骤。
+
+9．简述Nautilus的功能。
+
+10．若Linux系统启动后，直接进入X　Windows的图形模式，仍然可以进入文本模式，请简述二种不同的方法。
+
+11．如何退出linux重新登录？
+
+12．如何关闭Red Hat Linux系统
+
+13．Red Hat Linux 支持哪些常用的文件类型？他们有什么用处？
+
+14.Linux 使用者的帐号、密码与群组的名称文件放在哪里？
+
+15．什么是绝对路径与相对路径，要由/usr/Share/doc进入到/usr/share/man写出相对路径与绝对路径。
+
+16．什么是符号链接，什么是硬链接？符号链接与硬链接的区别是什么?
+
+17.新建一个用户wang，密码设为123456,并将其加到root组。写出所用命令。
+
+18.将当前计算机的IP地址设为192.168.1.123,子网掩码为255.255.255.0。写出所用命令。
+
+19．有那些命令可用来查看文件的内容，这些命令有什么不同？
+
+20．使用源代码安装软件的步骤是什么?
+
+21．简述如何使用RPM安装软件。
+
+22．键入 crontab -e 之后,如果输入这一行,代表什么意思?　
+* 15 * * 1-5 /usr/local/bin/tea_time.sh
+
+23.Shell中变量的赋值方法主要有哪几种？
+
+24.列举出至少4个常用的Shell系统变量，并说明它们的含义。
+
+25. Shell脚本有哪些作用？
+
+26. 什么是作业管理程序？它的主要任务是什么？
+
+27. 什么是作业调度？
+
+28. 阅读以下脚本程序，说明程序的功能。
+#! /bin/bash
+read int
+while [ $int –le 5 ]
+do
+sq=`expr $int \* $int `
+echo $sq
+int=`expr $int + 1 `
+done
+
+29. 阅读以下脚本程序，说明程序的功能。
+#! /bin/bash
+echo “Enter a file name:”
+read file
+if [ -f $file ]
+then
+echo “File $file exists.”
+fi
+
+30.简述安装有Linux操作系统的计算机的启动过程中各阶段的主要任务。
+31.对于内存为512MB的计算机，用20G的空间来安装Linux，请给出一种分区方案。
+32. Red Hat Enterprise Linux 5提供哪5种安装方式？
+33. 什么是BIOS？它主要有什么功能？
+34.Linux在内核启动阶段主要做什么工作？
+35. init进程要进行的操作包括哪些？
+36. 简述操作系统的特征。
+37．Linux 系统当中， DNS 是用什么软件实现的，最主要的命令有哪些？
+38．DNS 服务中主要的配置文件有哪些？
+39. 请描述DHCP服务的地址分配过程？
+40.在samba配置文件中加入一个共享文件夹的设置，要求修改public段（一个共享的目录，普通的访问者只读，属于std组的用户可以读写）
+41.某学校内部既存在WINDOWS操作系统，又存在LINUX操作系统，为了方便资源共享，建立一台SAMBA服务器，其地址为192.168.0.5，建立std、teacher两个用户，同时设置其密码。
+42.OpenSSH服务的主要应用场合是什么？
+43.FTP服务器有哪几种数据传输模式？分别在什么场合使用？
+1、 小张是某公司的计算机管理员，他需要为公司的一台运行Red Hat Linux 9的计算机配置网络连接，并将DNS服务器指向当地电信运营商提供的DNS服务器。小张可以通过修改（）文件来完成上述有关DNS服务器的配置。（选择一项）
+a) /etc/hosts
+b) /etc/host.conf
+c) /etc/resolv.conf
+d) /etc/nsswitch.conf
+参考答案
+C
+
+2、 小云的工作站运行的是Red Hat Linux 9系统，IP地址是192.168.1.101。他将工作站的缺省网关指向了192.168.1.1之后，能够访问互联网，但是不能访问公司的实验网（192.168.123.0/24）。需要将工作站的缺省网关指向192.168.1.254才能访问该实验网，但这时却不能访问互联网。小云希望能够同时访问互联网和公司的实验网（现在他的工作站上没有配置任何网关），他可以通过执行（）组命令来实现。（选择一项）
+a) route add -net 192.168.123.0 netmask 255.255.255.0 gw 192.168.1.254
+route add default gw 192.168.1.1
+b) route add -net 192.168.123.0 -netmask 255.255.255.0 -gw 192.168.1.254
+route add default -gw 192.168.1.1
+c) route add net 192.168.123.0 netmask 255.255.255.0 gw 192.168.1.254
+route add default gw 192.168.1.1
+d) route add 192.168.123.0 mask 255.255.255.0 192.168.1.254
+route add default 192.168.1.1
+参考答案
+A
+
+3、 有的时候，需要系统管理员手工更改网卡的硬件地址（MAC地址）。在Red Hat Linux9系统中，更改正在工作的网卡eth0的硬件地址，一般需要使用下列（ABD ）命令来完成。（选择三项）
+a) ifconfig eth0 up
+b) ifconfig eth0 down
+c) ifconfig eth0 inet 00:0c:29:78:9a:bc
+d) ifconfig eth0 hw ether 00:00:0c:12:34:56
+参考答案
+A
+
+4、 Linux系统中，常见的MTA包括（ ）。（选择三项）
+a) Sendmail
+b) Qmail
+c) Postfix
+d) Imap
+参考答案
+ABC
+
+5、 一般的，在Red Hat Linux 9系统中，下列的说法中正确的有（）。（选择一项）
+a) Sendmail通过TCP端口25提供邮件服务，ipop3d通过TCP端口143提供邮件服务，imapd通过TCP端口110提供邮件服务。
+b) Sendmail通过UDP端口25提供邮件服务，ipop3d通过TCP端口110提供邮件服务，imapd通过TCP端口143提供邮件服务。
+c) Sendmail通过TCP端口25提供邮件服务，ipop3d通过UDP端口110提供邮件服务，imapd通过UDP端口143提供邮件服务。
+d) Sendmail通过TCP端口25提供邮件服务，ipop3d通过TCP端口110提供邮件服务，imapd通过TCP端口143提供邮件服务。
+参考答案
+d
+
+6、 小谢在配置一台运行在Linux系统上的实验性Apache服务器的时候，把LogLevel参数设定为error，运行一段时间之后，他在error_log文件中可能会发现（）类型的错误日志。（选择二项）
+a) debug
+b) alert
+c) info
+d) crit
+参考答案
+b d
+
+7、 BENET公司网站的并发访问量一直在增长，同时在线的人很多。最近一段时间，经常有用户向管理员小谢反映，在上午的时候访问网站很慢。小谢在上午监控系统时发现CPU、内存等系统资源剩余还很多。网管员小张同时监控线路使用情况，发现线路的利用率也很低。BENET公司的WEB服务是通过运行在Linux系统上的Apache软件实现的，小谢基本上使用的是默认参数值。面对这种情况，你可以建议小谢通过增大httpd.conf文件中的（）参数来解决问题。（选择一项）
+a) StartServers
+b) MaxClients
+c) MinSpareServers
+d) MaxSpareServers
+参考答案
+b
+
+8、 BENET.COM公司的网络管理员小王，在自己的Linux工作站上安装了BIND软件，配置实现了DNS服务，作为公司的辅助域名服务器。在他的工作站上的named.conf文件中，BENET.COM区域的类型是（）。（选择一项）
+a) master
+b) hint
+c) slave
+d) server
+参考答案
+C
+
+9、 在DNS服务器的区数据文件中，一般都包含着多种类型的多条资源记录（RR）。PTR类型的资源记录的作用是（）。（选择一项）
+a) 定义主机别名
+b) 转换主机名到IP地址
+c) 转换IP地址到主机名
+d) 描述主机硬件和操作系统信息
+参考答案
+C
+
+10、 Dig是Linux系统中一个灵活的、强大的DNS辅助工具，我们可以使用它完成许多工作。例如，利用dig工具更新DNS根服务器的地址信息，避免因信息改变造成DNS的查询效率减慢。要完成这项工作，应该执行（）。（选择一项）
+a) dig a.root-servers.net . ns > /var/named/named.ca
+b) dig @a.root-servers.net . ns > /var/named/named.ca
+c) dig @a.root-servers.net . mx > /var/named/named.ca
+d) dig @a.root-servers.net soa txt chaos version.bind
+参考答案
+B
+
+11、 某公司的网络管理员小李，利用Red Hat Linux 9和vsftp安装了一台文件服务器，用于存放公司的产品研发资料。根据公司的管理规定，只允许benet部门的用户访问这台服务器。为了达到这个目的，小李可以配置（）。（选择一项）
+a) 在/etc/vsftpd/vsftpd.conf中设置userlist_deny=YES，将/etc/vsftpd.ftpusers修改为只包含benet部门的用户
+b) 在/etc/vsftpd/vsftpd.conf中设置userlist_deny=NO，将/etc/vsftpd.ftpusers修改为只包含benet部门的用户
+c) 在/etc/vsftpd/vsftpd.conf中设置userlist_deny=YES，将/etc/vsftpd.user_list修改为只包含benet部门的用户
+d) 在/etc/vsftpd/vsftpd.conf中设置userlist_deny=NO，将/etc/vsftpd.user_list修改为只包含benet部门的用户
+参考答案
+B
+
+12、 某公司的网络管理员小云需要在他的Linux工作站上，通过NFS访问公司的文件服务器filesvr上的资源/netadmin。为此，他可以执行（）。（选择一项）
+a) mount filesvr:/netadmin /mnt/nfs -t nfs
+b) mount //filesvr/netadmin /mnt/nfs -t nfs
+c) mount [url=file://\\filesvr\netadmin]\\filesvr\netadmin[/url] /mnt/nfs
+d) mount nfs://filesvr/netadmin /mnt/nfs
+参考答案
+A
+
+13、 在Red Hat Linux 9系统中，默认配置了iptables防火墙工具。一般的，iptables维护着三章规则表和五条规则链，其中Filter规则表中包括规则链（）。（选择三项）
+a) PREROUTING
+b) INPUT
+c) FORWARD
+d) OUTPUT
+e) POSTROUTING
+参考答案
+BCD
+Filter : INPUT、FORWARD、OUTPUT 三
+NAT: PREROUTING、POSTROUTING、OUTPUT 三
+Mangle: 五个都有 五
+
+14、 小李正在按照公司的管理制度配置运行在Linux系统上的代理服务器软件squid。公司规定所有的计算机只能在周一至周五的10：00至16：00通过代理服务器访问互连网。为了实现这一管理需求，小李应该在/etc/squid/squid.conf中添加访问控制列表（）。（选择一项）
+a) acl regular_days time 10:00-16:00
+b) acl regular_times time MTWHF 10:00-16:00
+c) acl allowed_clients src 10:00-16:00
+d) http_access allow MTWHF 10:00-16:00
+参考答案
+B
+
+15、 OpenLDAP软件提供了Linux系统中的目录服务功能，有着广泛的应用。该软件采用客户端/服务器的工作模式，在下列的命令中，可以用来测试客户端和服务器的连接与配置情况的命令是（）。（选择一项）
+a) slapd
+b) ldap
+c) slappasswd
+d) ldapsearch
+参考答案
+D
+
+16、 Ypserv软件是Linux平台上NIS/YP协议的实现，但是NIS服务经常受到安全问题的困扰。为了提高安全性，作为管理员的你，在配置公司的ypserv服务器的时候，应该指定只有公司的局域网用户（192.168.1.0/24）可以访问NIS服务器。为了实现这一目标需要（）。（选择二项）
+a) 创建文件securenets并增加一行：255.255.255.0 192.168.1.0
+b) 创建文件securenets并增加一行：192.168.1.0 255.255.255.0
+c) 配置/etc/ypserv.conf，设置maps文件的访问控制：
+255.255.255.0/192.168.1.0 :* :* :none
+d) 配置/etc/ypserv.conf，设置maps文件的访问控制：
+192.168.1.0/255.255.255.0 :* :* :none
+参考答案
+AD
+
+17、 小云希望在自己的Red Hat Linux9系统中，单机完成MRTG的实验，即通过MRTG软件监控自己的工作站并获得WEB方式的流量统计信息。为此，除了MRTG软件包之外，他还需要安装下列软件包中的（）。（选择二项）
+a) httpd
+b) sendmail
+c) net-snmp
+d) nfs-utils
+参考答案
+AC
+
+18、 Tcp-wrappers工具包提供了Unix/Linux平台上的网络系统安全性，许多系统服务都支持tcp-wrappers。管理员在配置tcp-wrappers的安全规则时，一般需要修改配置文件（）。（选择二项）
+a) /etc/hosts
+b) /etc/hosts.allow
+c) /etc/hosts.conf
+d) /etc/hosts.deny
+参考答案
+BD
+
+19、 晓风正以“feng”身份登陆在自己的Linux工作站上，现在他需要通过ssh以“benet”身份远程登录文件服务器（filesvr）进行管理。他可以执行下列的操作（）。（选择二项）
+a) ssh filesvr
+b) ssh -L benet filesvr
+c) ssh -l benet filesvr
+d) ssh benet@filesvr]benet@filesvr
+参考答案
+CD
+
+20、 VPN是利用公共网络资源构建专用网络的技术，它使企业能够安全而经济的通过INTERNET传输机密信息。根据其采用的隧道技术的不同，可以把VPN分为多种类型。在Linux环境中得到广泛应用的FreeS/WAN是（ ）。（选择一项）
+a) 基于IPsec的VPN
+b) 基于PPTP的VPN
+c) 基于L2F的VPN
+d) 基于L2TP的VPN
+e) 基于SSL的VPN
+
+检查一个端口是否被占用的命令是？一旦被占用你如何解决这个问题？
+netstat -an|grep 8080
+
+linux shell中单引号和双引号或不加引号的区别
+
+linux运行级别0-6
+
+新建一个用户user，密码设为123456,并将其加到root组。写出所用命令。
+
+将当前计算机的IP地址设为192.168.1.123,子网掩码为255.255.255.0。写出所用命令。
+
+让named守护进程运行在级别3，5的命令。
+
+更改用户zhang的登录shell为/sbin/nologin的命令。
+
+配置当前主机的默认网关为192.168.2.254的命令。
+
+连续ping目的IP为192.168.2.245为10次的的命令。
+
+查看当前主机TCP协议连接情况的命令。
+
+打包并压缩/etc目录的命令。
+
+测试httpd是否安装的命令。
+
+卸载named软件包的命令。
+
+查看月历并将内容追加到文件/dd中的命令。
+
+查看当前目录的命令。
+
+显示历史命令表的所有内容的命令。
+
+将/etc/passwd的内容追加到文件aaa中的命令。
+
+查看/etc/passwd文件的前10行的命令。
+
+查看/etc/vsftpd/vsftpd.conf的后10行的命令。
+
+重启samba服务的命令。
+
+查看进程状态的命令。
+
+列出后台作业的命令。
+
+将作业ID为5的后台作业放到前台的命令。
+
+停止ssh服务的命令。
+
+将name=wxstc配置为全局变量的命令。
+
+重启linux服务器的命令。
+
+要给文件file1加上其他人可执行属性的命令。
+
+为了达到使文件sudent.txt的所有者有读(r)和写(w)的许可，而其他用户只能进行只读访问的命令。
+
+把大写字母转换为小写字母的命令。
+
+显示操作系统核心版本详细信息的命令。
+
+将新建文件权限设置为600的命令。
+
+从IP地址查找域名或从域名来查找IP地址应使用什么命令。
+
+如何查看用户zhang属于哪个组。
+
+假如当前系统是在 level 3 运行，不重启系统就可转换到 level 5 运行的命令。
+
+查看Linux的启动信息的命令。
+
+创建一个以自己姓的拼音缩写为名的用户。
+
+进入用户主目录，显示当前的路径。
+
+复制文件/etc/group到用户主目录，文件名不变。
+
+统计文件/etc/fstab的行数、单词数、字符数。
+
+查看/etc/passwd文件的后5行。
+
+创建普通文件/home/abc。
+
+修改/home/abc的属性为：属主具有一切权限，同组用户和其他用户具有可读可写的权限。
+
+显示当前的时间。
+
+写出系统1分钟后关机的命令。
+
+启动ssh服务器。
+
+新建一个以你的学号为账号的用户。
+
+复制文件/etc/passwd到用户主目录，文件名不变。
+
+进入用户主目录，显示当前的路径。
+
+统计文件/etc/passwd的行数。
+
+查看/etc/passwd的前8行。
+
+显示2011年1月的日历。
+
+建立文件/etc/group的符号链接文件/root/abc。
+
+后台启动程序gedit。
+
+配置网卡eth0的IP地址为192.168.0.1，子网掩码为255.255.255.0
+
+查看dns服务器的状态。
+
+创建一个以自己的姓的拼音命名的用户。
+
+添加一个用户组，名称为wuxi。
+
+修改新建的用户属于wuxi组。
+
+复制文件/etc/passwd到用户主目录，文件名称不变。
+
+修改该文件的属性为：属主具有一切权限，同组用户和其他用户具有可读权限。
+
+显示当前系统时间。
+
+写出30分钟后系统重启的命令。
+
+显示历史命令表的所有内容。
+
+显示Linux系统运行所有进程。
+
+重新启动ssh服务器。
+
+创建一个以自己的名的拼音命名的用户。
+
+添加一个用户组，名称为js。
+
+修改新建的用户属于js组。
+
+进入该用户主目录，显示当前的路径。
+
+复制文件/etc/fstab到此文件夹，文件名称不变。
+
+统计文件/etc/fstab的字符数。
+
+设置当前时间设为15：00，显示当前系统时间。
+
+写出系统5分钟后重启的命令。
+
+配置网卡eth0的IP地址为192.168.10.1，子网掩码为255.255.255.0
+
+查看DHCP服务器的状态。
+ 
+二、操作题
+1. 某系统管理员需每天做一定的重复工作，请按照下列要求，编制一个解决方案：
+（1）在下午4 :50删除/abc目录下的全部子目录和全部文件；
+（2）从早8:00～下午6:00每小时读取/xyz目录下x1文件中每行第一个域的全部数据加入到/backup目录下的bak01.txt文件内。
+ 
+2. 某学校内部既存在WINDOWS操作系统，又存在LINUX操作系统，为了方便资源共享，建立一台SAMBA服务器，其地址为192.168.0.5，建立std、teacher两个用户，同时设置其密码。
+ 
+3.富曼公司有2个部门，分别是研发部yf和车间cj.搭建公司WWW服务器，IP地址为192.168.2.6，公司域名为www.fuman.com,研发部域名为yf.fuman.com,车间域名为cj.fuman.com,要求根据以上域名在IP地址192.168.2.6上搭建基于域名的虚拟服务器，并且不允许192.168.2.245的IP访问研发部的网页。
+ 
+4.外语系老师为了共享教学资料,需要架设一个FTP服务器,允许所有老师以匿名方式登录FTP服务器,可以浏览文件、上传文件和创建文件夹,但不允许删除和修改文件。
+ 
+5.编写一个名为mul的脚本程序，参数为一个大于20的正整数。先检查参数是否符合要求。如果不符合要求，请给出提示；如果符合要求，分别输出其与1到10的乘积。
+ 
+6.编写一个名为move的脚本程序，格式move  <file1>  <file2>。如果file1不存在，给出提示；否则移动file1至file2。
+ 
+7.编写一个shell脚本，能够显示下面序列的前25个数字。0,1,1,2,3,5,8,13…，前二个数字之和为第三个数字，即著名的Fibonacci序列。
+ 
+8.编写一个名为square的脚本程序，参数为一大于10的正整数。先检查参数是否符合要求。如果不符合要求，请给出提示；如果符合要求，输出从1到该正整数的平方值。
+
+4． 如果有一个简单的helloworld项目目录如下：
+# tree helloworld
+helloworld
+|– file2.h
+|– file1.cpp
+|– file2.cpp
+请编写一个Makefile文件。
+
+3． Linux系统下.ko文件是什么文件？.so文件是什么文件？
+
+Linux认证 笔试 基本题（答案见最后）
+(以下均为单选题)
+1. cron 后台常驻程序 (daemon) 用于：
+A. 负责文件在网络中的共享
+B. 管理打印子系统
+C. 跟踪管理系统信息和错误
+D. 管理系统日常任务的调度
+2. 在大多数Linux发行版本中，以下哪个属于块设备 (block devices) ？
+A. 串行口
+B. 硬盘
+C. 虚拟终端
+D. 打印机
+　
+3. 下面哪个Linux命令可以一次显示一页内容？
+A. pause
+B. cat
+C. more
+D. grep
+　
+4. 怎样了解您在当前目录下还有多大空间？
+A. Use df
+B. Use du /
+C. Use du .
+D. Use df .
+　
+5. 怎样更改一个文件的权限设置？
+A. attrib
+B. chmod
+C. change
+D. file
+　
+6. 假如您需要找出 /etc/my.conf 文件属于哪个包 (package) ，您可以执行：
+A. rpm -q /etc/my.conf
+B. rpm -requires /etc/my.conf
+C. rpm -qf /etc/my.conf
+D. rpm -q | grep /etc/my.conf
+　
+7. 假如当前系统是在 level 3 运行，怎样不重启系统就可转换到 level 5 运行？
+A. Set level = 5
+B. telinit 5
+C. run 5
+D. ALT-F7-5
+　
+8. 那个命令用于改变 IDE 硬盘的设置？
+A. hdparam
+B. ideconfig
+C. hdparm
+D. hddparm
+　
+9. 下面哪个命令可以列出定义在以后特定时间运行一次的所有任务？
+A. atq
+B. cron
+C. batch
+D. at
+　
+10. 下面命令的作用是：set PS1=”[\u\w\t]\\$” ; export PS1
+A. 改变错误信息提示
+B. 改变命令提示符
+C. 改变一些终端参数
+D. 改变辅助命令提示符
+　
+11. 作为一个管理员，你希望在每一个新用户的目录下放一个文件 .bashrc ，那么你应该在哪个目录下放这个文件，以便于新用户创建主目录时自动将这个文件复制到自己的目录下。
+A. /etc/skel/
+B. /etc/default/
+C. /etc/defaults/
+D. /etc/profile.d/
+　
+12. 在bash中，export命令的作用是：
+A. 在子shell中运行命令
+B. 使在子shell中可以使用命令历史记录
+C. 为其它应用程序设置环境变量
+D. 提供NFS分区给网络中的其它系统使用
+　
+13. 在使用了shadow口令的系统中，/etc/passwd和/etc/shadow两个文件的权限正确的是：
+A. -rw-r—– , -r——–
+B. -rw-r–r– , -r–r–r–
+C. -rw-r–r– , -r——–
+D. -rw-r–rw- , -r—–r–
+　
+14．下面哪个参数可以删除一个用户并同时删除用户的主目录？
+A. rmuser -r
+B. deluser -r
+C. userdel -r
+D. usermgr -r
+　
+15． 有一个备份程序mybackup，需要在周一至周五下午1点和晚上8点各运行一次，下面哪条crontab的项可以完成这项工作？
+A. 0 13,20 * * 1,5 mybackup
+B. 0 13,20 * * 1,2,3,4,5 mybackup
+C. * 13,20 * * 1,2,3,4,5 mybackup
+D. 0 13,20 1,5 * * mybackup
+　
+16． 如何从当前系统中卸载一个已装载的文件系统
+A. umount
+B. dismount
+C. mount -u
+D. 从 /etc/fstab 中删除这个文件系统项
+　
+17． 如果你的umask设置为022，缺省的你创建的文件的权限为：
+A. —-w–w-
+B. -w–w—-
+C. r-xr-x—
+D. rw-r–r–
+　
+18． 在一条命令中如何查找一个二进制命令 Xconfigurator 的路径？
+A. apropos Xconfigurator
+B. find Xconfigurator
+C. where Xconfigurator
+D. which Xconfigurator
+　
+19． 哪一条命令用来装载所有在 /etc/fstab 中定义的文件系统？
+A. amount
+B. mount -a
+C. fmount
+D. mount -f
+　
+20． 运行一个脚本，用户不需要什么样的权限？
+A. read
+B. write
+C. execute
+D. browse on the directory
+　
+21． 在Linux中，如何标识接在IDE0上的slave硬盘的第2个扩展分区？
+A. /dev/hdb2
+B. /dev/hd1b2
+C. /dev/hdb6
+D. /dev/hd1b6
+　
+22． 在应用程序起动时，如何设置进程的优先级？
+A. priority
+B. nice
+C. renice
+D. setpri
+　
+23． 在 bash 中, 在一条命令后加入 “1>&2″ 意味着：
+A. 标准错误输出重定向到标准输入
+B. 标准输入重定向到标准错误输出
+C. 标准输出重定向到标准错误输出
+D. 标准输出重定向到标准输入
+　
+24． 下面哪条命令可以把f1.txt复制为f2.txt?
+A. cp f1.txt | f2.txt
+B. cat f1.txt | f2.txt
+C. cat f1.txt > f2.txt
+D. copy f1.txt | f2.txt
+　
+25． 显示一个文件最后几行的命令是：
+A. tac
+B. tail
+C. rear
+D. last
+26.如何快速切换到用户John的主目录下？
+A. cd @John
+B. cd #John
+C. cd &John
+D. cd ~John
+　
+27.把一个流中所有字符转换成大写字符，可以使用下面哪个命令？
+A. tr a-z A-Z
+B. tac a-z A-Z
+C. sed /a-z/A-Z
+D. sed –toupper
+　
+28.使用什么命令可以查看Linux的启动信息？
+A. mesg -d
+B. dmesg
+C. cat /etc/mesg
+D. cat /var/mesg
+29.运行级定义在：
+A. in the kernel
+B. in /etc/inittab
+C. in /etc/runlevels
+D. using the rl command
+30.如何装载(mount)上在 /etc/fstab 文件中定义的所有文件系统？
+A. mount -a
+B. mount /mnt/*
+C. mount
+D. mount /etc/fstab
+31.使用ln命令将生成了一个指向文件old的符号链接new，如果你将文件old删除，是否还能够访问文件中的数据？
+A. 不可能再访问
+B. 仍然可以访问
+C. 能否访问取决于文件的所有者
+D. 能否访问取决于文件的权限
+32.xt2fs文件系统中，缺省的为root用户保留多大的空间？
+A. 3%
+B. 5%
+C. 10%
+D. 15%
+33.哪个命令用来显示系统中各个分区中inode的使用情况？
+A. df -i
+B. df -H
+C. free -b
+D. du -a -c /
+　
+34.多数Linux发行版本中，图形方式的运行级定义为？
+A. 1
+B. 2
+C. 3
+D. 5
+35.在系统文档中找到关于print这个单词的所有说明？
+A. man print
+B. which print
+C. locate print
+D. apropos print
+36.man 5 passwd 含义是？
+A. 显示 passwd 命令的使用方法
+B. 显示 passwd 文件的结构
+C. 显示 passwd 命令的说明的前五行
+D. 显示关于passwd的前五处说明文档。
+37.如何在文件中查找显示所有以”*”打头的行？
+A. find \* file
+B. wc -l * < file
+C. grep -n * file
+D. grep ‘^\*’ file
+38.在ps命令中什么参数是用来显示所有用户的进程的？
+A. a
+B. b
+C. u
+D. x
+39.显示二进制文件的命令是？
+A. od
+B. vil
+C. view
+D. binview
+40.如何显示Linux系统中注册的用户数（包含系统用户）？
+A. account -l
+B. nl /etc/passwd |head
+C. wc –users /etc/passwd
+D. wc –lines /etc/passwd
+41.在一行结束位置加上什么符号，表示未结束，下一行继续？
+A. /
+B. \
+C. ;
+D. |
+42.命令 kill 9 的含义是：
+A. kills the process whose PID is 9.
+B. kills all processes belonging to UID 9.
+C. sends SIGKILL to the process whose PID is 9.
+D. sends SIGTERM to the process whose PID IS 9.
+43.如何删除一个非空子目录/tmp？
+A. del /tmp/*
+B. rm -rf /tmp
+C. rm -Ra /tmp/*
+D. rm -rf /tmp/*
+44.使用什么命令可以在今天午夜运行命令 cmd1 ？
+A. at midnight cmd1
+B. cron -at “00:00″ cmd1
+C. batch -t “00:00″ < cmd1
+D. echo “cmd1″ | at midnight
+45.你的系统使用增量备份策略，当需要恢复系统时，你需要按什么顺序恢复备份数据？
+A. 最后一次全备份，然后从最早到最近的增量备份
+B. 最后一次全备份，然后从最近到最早的增量备份
+C. 最早到最近的增量备份，然后最后一次全备份
+D. 最近到最早的增量备份，然后最后一次全备份
+46.对所有用户的变量设置，应当放在哪个文件下？
+A. /etc/bashrc
+B. /etc/profile
+C. ~/.bash_profile
+D. /etc/skel/.bashrc
+47.Linux系统中，一般把命令 ls 定义为 ls –color 的别名，以便以不同颜色来标识不同类型的文件。但是，如何能够使用原先的ls命令？
+A. \ls
+B. ;ls
+C. ls $$
+D. ls –noalias
+48.在Linux系统中的脚本文件一般以什么开头？
+A. $/bin/sh
+B. #!/bin/sh
+C. use /bin/sh
+D. set shell=/bin/sh
+49.下面哪种写法表示如果cmd1成功执行，则执行cmd2命令？
+A. cmd1&&cmd2
+B. cmd1|cmd2
+C. cmd1;cmd2
+D. cmd1||cmd2
+50.在哪个文件中定义网卡的I/O地址？
+A. cat /proc/modules
+B. cat /proc/devices
+C. cat /proc/ioports
+D. cat /io/dma
+51.Linux中，提供TCP/IP包过滤功能的软件叫什么？
+A. rarp
+B. route
+C. iptables
+D. filter
+52.如何暂停一个打印队列？
+A. lpr
+B. lpq
+C. lpc
+D. lpd
+53.在vi中退出不保存的命令是？
+A. :q
+B. :w
+C. :wq
+D. :q!
+54.在 XFree86 3.x 中, 缺省的字体服务器为：
+A. xfs
+B. xfserv
+C. fonts
+D. xfstt
+55.使用什么命令检测基本网络连接？
+A. ping
+B. route
+C. netstat
+D. ifconfig
+56.下面哪个协议使用了二个以上的端口？
+A. telnet
+B. FTP
+C. rsh
+D. HTTP
+57.在PPP协议中，哪个认证协议不以明文传递密码？
+A. PAM
+B. PAP
+C. PGP
+D. CHAP
+58.下面哪个文件系统应该分配最大的空间？
+A. /usr
+B. /lib
+C. /root
+D. /bin
+59.如何在Debian系统中安装rpm包？
+A. alien pkgname.rpm
+B. dpkg –rpm pkgname.rpm
+C. dpkg –alien pkgname.rpm
+D. alien pkganme.rpm ; dpkg -i pkganme.deb
+　
+60.在安装软件时下面哪一步需要root权限？
+A. make
+B. make deps
+C. make config
+D. make install
+61.什么命令用来只更新已经安装过的rpm软件包？
+A. rpm -U *.rpm
+B. rpm -F *.rpm
+C. rpm -e *.rpm
+D. rpm -q *.rpm
+62.在 windows 与 Linux 双起动的系统中，如果要让 LILO 管理引导，则 LILO 应该放在：
+A. MBR
+B. /
+C. root分区的首扇区
+D. /LILO
+63.ldconfig的配置文件是
+A. /lib/ld.so
+B. /etc/ld.so.conf
+C. /etc/ld.so.cache
+D. /etc/modules.conf
+
+64.下面哪个命令可以压缩部分文件：
+A. tar -dzvf filename.tgz *
+B. tar -tzvf filename.tgz *
+C. tar -czvf filename.tgz *
+D. tar -xzvf filename.tgz *
+
+65.网络服务的daemon是：
+A. lpd
+B. netd
+C. httpd
+D. inetd
+66.Linux与windows 的网上领居互联，需要提供什么daemon?
+A. bind
+B. smbd
+C. nmbd
+D. shard
+67.对于Apache服务器，提供的子进程的缺省的用户是：
+A. root
+B. apached
+C. httpd
+D. nobody
+68.sendmail中缺省的未发出信件的存放位置是：
+A. /var/mail/
+B. /var/spool/mail/
+C. /var/spool/mqueue/
+D. /var/mail/deliver/
+69.apache的主配置文件是：
+A. httpd.conf
+B. httpd.cfg
+C. access.cfg
+D. apache.conf
+70.关于可装载的模块，装载时的参数，如I/O地址等的存放位置是：
+A. /etc/conf.modules
+B. /etc/lilo.conf
+C. /boot/System.map
+D. /etc/sysconfig
+71.在 Linux 中，如何关闭邮件提示？
+A. biff n
+B. mesg n
+C. notify off
+D. set notify=off
+72.在 bash shell 环境下，当一命令正在执行时，按下 control-Z 会：
+A. 中止前台任务
+B. 给当前文件加上 EOF.
+C. 将前台任务转入后台
+D. 注销当前用户
+73.定义bash环境的用户文件是：
+A. bash & .bashrc
+B. bashrc & .bash_conf
+C. bashrc & bash_profile
+D. .bashrc & .bash_profile
+74.下面哪条命令用来显示一个程序所使用的库文件？
+A. ldd
+B. ld so
+C. modprobe
+D. ldconfig
+75.如何查看一个RPM软件的配置文件的存放位置？
+A. rpm -qc rpm1
+B. rpm -Vc rpm1
+C. rpm –config rpm1
+D. rpm -qa –config rpm1
+76.如何查看一个RPM软件的修改记录？
+A. rpm -Vc postfix
+B. rpm -qpil postfix
+C. rpm –changelog postfix
+D. rpm -q –changelog postfix
+77.通过Makefile来安装已编译过的代码的命令是：
+A. make
+B. install
+C. make depend
+D. make install
+78.什么命令解压缩tar文件？
+A. tar -czvf filename.tgz
+B. tar -xzvf filename.tgz
+C. tar -tzvf filename.tgz
+D. tar -dzvf filename.tgz
+79.在 XF86Config 配置文件中，哪个段用来设置字体文件？
+A. The Fonts section.
+B. The Files section.
+C. The xfsCodes section.
+D. The Graphics section.
+80.8 bit color 指的是：
+A. 64K colors
+B. 16K colors
+C. 256 colors
+D. 16M colors
+81.下面哪个文件用来设置 X window 的显示分辨率？
+A. xinit
+B. xinitrc
+C. XF86Setup
+D. XF86Config
+82.哪个变量用来指定一个远程X应用程序将输出放到哪个X server上？
+A. DISPLAY
+B. TERM
+C. ECHO
+D. OUTPUT
+83.在xdm的配置目录中，哪个文件用来设置在用户通过xdm登录后自动起动的应用程序？
+A. The Xsession file
+B. The Xsetup_0 file
+C. The Xstart_up file
+D. The GiveConsole file
+84.命令 netstat -a 停了很长时间没有响应，这可能是哪里的问题？
+A. NFS.
+B. DNS.
+C. NIS.
+D. routing.
+85.ping使用的协议是：
+A. TCP
+B. UDP
+C. SMB
+D. ICMP
+86.下面哪个命令不是用来查看网络故障的？
+A. ping
+B. init
+C. telnet
+D. netstat
+87.拨号上网使用的协议通常是：
+A. PPP
+B. UUCP
+C. SLIP
+D. Ethernet
+88.TCP/IP中，哪个协议是用来进行IP自动分配的？
+A. ARP
+B. NFS
+C. DHCP
+D. DNS
+89.下面哪个文件定义了网络服务的端口？
+A. /etc/netport
+B. /etc/services
+C. /etc/server
+D. /etc/netconf
+90.下面哪个功能用来生成一个文件的校验码？
+A. md5
+B. tar
+C. crypt
+D. md5sum
+91.缺省的，用户邮件放在：
+A. ~/mail/
+B. /var/mail/
+C. /var/mail/spool/
+D. /var/spool/mail/
+92.下面哪个文件包含了供 NFS daemon 使用的目录列表？
+A. /etc/nfs
+B. /etc/nfs.conf
+C. /etc/exports
+D. /etc/netdir
+93.如何停止一台机器的telnet服务？
+A. Put NONE in /etc/telnet.allow
+B. Put a line ‘ALL:ALL’ in /etc/hosts.deny
+C. Comment the telnet entry in /etc/inittab
+D. Comment the telnet entry in /etc/xinetd.conf
+94.在哪个文件中保存了sendmail的别名？
+A. /etc/aliases
+B. /etc/mailaliases
+C. /etc/sendmail.aliases
+D. /etc/sendmail/aliases
+95.smbd and nmbd daemons 的配置文件是：
+A. /etc/exports
+B. /etc/smb.conf
+C. /etc/samba/config
+D. /usr/local/samba.cfg
+96.下面哪个命令用来卸载一个内核模块？
+A. rmmod
+B. unmod
+C. delmod
+D. modprobe
+97.什么情况下必须运行lilo
+A. once a day from cron
+B. once a week from cron
+C. after installing a new kernel
+D. after installing a new module
+98.什么命令显示所有装载的模块？
+A. lsmod
+B. dirmod
+C. modules
+D. modlist
+99.下面哪个命令刷新打印机队列？
+A. lpflush
+B. lprm -
+C. lpclear
+D. lprm all
+100.下面哪个命令可以查看网卡的中断？
+A. cat /proc/ioports
+B. cat /proc/interrupts
+C. cat /proc/memoryinfo
+D. which interrupts
+1、检测某个端口所占用的进程
+2、对于linux主机的cpu负载使用，什么情况下user的比例升高，什么情况下system的比例升高，请联系实际举例。
+3、在不umount的情况下，如何重新设置mount的参数。
+4、不小心在系统下执行了chmod -x/sbin/chmod 怎么办？
+5、linux文件的权限位x对目录和文件有何不同？
+6、找出/taomee目录下的所有常规文件并设置权限644
+7、如何查找某一文件被哪个进程打开？
+8、新增一块存储设备，lvm操作的命令如何写
+9、给主机host：172.16.0.2 增加gateway10.0.0.1
+10、socket和tcp访问mysql的区别？
+二、shell
+1、使用awk打印出 welcome to taomee
+2、如何将一个文件中的taomee、******、peoplenet中的*内容进行替换成network（*的内容不同）
+3、找出access.log中访问top 10的ip地址
+4、打印1-100奇数
+5、删除一个文件中行号为奇数的行
+6、替换某一个文件的字符串
+7、exec和souce区别
+8、显示24小时前的内容，
+9、linux的优化
+10、iptables表和链
+Linux面试题大全
+一．填空题
+1. 在Linux系统中，以 方式访问设备 。
+2. Linux内核引导时，从文件 中读取要加载的文件系统。
+3. Linux文件系统中每个文件用 来标识。
+4. 全部磁盘块由四个部分组成，分别为 。
+5. 链接分为： 和 。
+6. 超级块包含了 和 等重要的文件系统信息。
+7. 某文件的权限为：drw-r–r–，用数值形式表示该权限，则该八进制数为： ，该文件属性是 。
+8. 前台起动的进程使用 Ctrl+c 终止。
+9. 静态路由设定后，若网络拓扑结构发生变化，需由 修改路由的设置。
+10. 网络管理的重要任务是： 和 。
+11. 安装Linux系统对硬盘分区时，必须有两种分区类型： 和 。
+13. 编写的Shell程序运行前必须赋予该脚本文件 权限。
+14. 系统管理的任务之一是能够在 环境中实现对程序和数据的安全保护、备份、恢复和更新。
+15. 系统交换分区是作为系统 的一块区域。
+16. 内核分为 、 、 和 等四个子系统。
+17. 内核配置是系统管理员在改变系统配置 时要进行的重要操作。
+18. 在安装Linux系统中，使用netconfig程序对网络进行配置，该安装程序会一步步提示用户输入主机名、域名、域名服务器、IP地址、 和 等必要信息。
+19. 唯一标识每一个用户的是用户 和用户名。
+20 . 协议是最为普遍的一种内部协议，一般称为动态路由选择协议。
+21. 在Linux系统中所有内容都被表示为文件，组织文件的各种方法称为 。
+22. DHCP可以实现 IP地址分配。
+23. 系统网络管理员的管理对象是服务器、 和 以及系统的各种资源。
+24. 网络管理通常由 三部分组成，其中管理部分是整个网络管理的中心。
+25. 当想删除本系统用不上的 时必须编译内核，当内核不支持系统上的 时，必须对内核 。
+26 Ping命令可以测试网络中本机系统是否能到达 ，所以常常用于测试网络的 。
+27. vi编辑器具有两种工作模式： 和 。
+28. 可以用ls –al命令来观察文件的权限，每个文件的权限都用10位表示，并分为四段，其中第一段占 位，表示 ，第二段占3位，表示 对该文件的权限。
+29. 进程与程序的区别在于其动态性，动态的产生和终止，从产生到终止进程可以具有的基本状态为： 、 和 。
+30. DNS实际上是分布在internet上的主机信息的数据库，其作用是实现 和 之间的转换。
+31. Apache是实现WWW服务器功能的应用程序，即通常所说的“浏览web服务器”，在 为用户提供浏览 web服务 的就是apache应用程序。
+32. 在Linux系统上做备份可以有两种类型： 和 。其中前者是指对 的备份，后者是指对 的备份。
+33. CD-ROM标准的文件系统类型是 。
+34. 当lilo.conf配置完毕后，使之生效，应运行的命令及参数是 。
+35. 在使用ls命令时，用八进制形式显示非打印字符应使用参数 。
+36. Linux使用支持Windows 9.x/2000长文件名的文件系统的类型是 。
+37. 设定限制用户使用磁盘空间的命令是 。
+38 在Linux系统中，用来存放系统所需要的配置文件和子目录的目录是 。
+39. 硬连接只能建立对 链接。 可以跨不同文件系统创建。
+40. 套接字文件的属性位是 。
+41. 结束后台进程的命令是 。
+42. 进程的运行有两种方式，即 。
+43. Links分为 。
+44. 在超级用户下显示Linux系统中正在运行的全部进程，应使用的命令及参数是 。
+45. 管道文件的属性位是 。
+46. 将前一个命令的标准输出作为后一个命令的标准输入，称之为 。
+47. 为脚本程序指定执行权的命令及参数是 。
+48. 进行远程登录的命令是 。
+49. 欲发送10个分组报文测试与主机abc.tuu.edu.cn的连通性，应使用的命令和参数是： 。
+50. DNS服务器的进程命名为named，当其启动时，自动装载 /etc目录下的 文件中定义的DNS分区数据库文件。
+51. Apache服务器进程配置文件是 。
+52.在 Linux系统中，压缩文件后生成后缀为.gz文件的命令是 。
+53. 在用vi编辑文件时，将文件内容存入test.txt文件中，应在命令模式下键入 。
+54 可以在标准输出上显示整年日历的命令及参数是 。
+55. 在shell编程时，使用方括号表示测试条件的规则是：方括号两边必须有 。
+56. 检查已安装的文件系统/dev/had5是否正常，若检查有错，则自动修复，其命令及参数是 。
+57. 在Windows9.x环境下共享Unix/Linux中的用户目录的一个工具是 。
+58. 系统管理员的职责是进行系统资源管理、系统性能管理、设备管理、安全管理和 。
+59 在Linux系统中，测试DNS服务器是否能够正确解析域名的的客户端命令，使用命令 。
+60. 在Linux系统下，第二个IDE通道的硬盘（从盘）被标识为 。
+61. 当系统管理员需升级内核版本和改变系统硬件配置时，应 。
+62. 如果只是要修改系统的IP地址，应修改 配置文件。
+63. 当LAN内没有条件建立DNS服务器，但又想让局域网内的用户可以使用计算机名互相访问时，应配置 文件。
+64. 在vi编辑环境下，使用 进行模式转换。
+65. Slackware Linux 9.0通常使用 文件系统，系统的全部磁盘块由 部分组成。
+66. 将/home/stud1/wang目录做归档压缩，压缩后生成wang.tar.gz文件，并将此文件保存到/home目录下，实现此任务的tar命令格式 。
+67. 管道就是将前一个命令的 作为后一个命令的 。
+68. 在使用手工的方法配置网络时，可通过修改 文件来改变主机名，若要配置该计算机的域名解析客户端，需配置 文件。
+69. 启动进程有手动启动和调度启动两种方法，其中调度启动常用的命令为 、 和 。
+70. test.bns.com.cn的域名是 ，如果要配置一域名服务器，应在 文件中定义DNS数据库的工作目录。
+71. Sendmail邮件系统使用的两个主要协议是： 和 ，前者用来发送邮件,后者用来接收邮件。
+72. DHCP是动态主机配置协议的简称，其作用是：为网络中的主机 。
+73. 目前代理服务器使用的软件包有很多种，教材中使用的是 。
+74. rm命令可删除文件或目录，其主要差别就是是否使用递归开关 。
+75. mv 命令可以移动文件和目录，还可以为文件和目录重新命名。
+76. 路由选择协议（RIP）的跳数表示到达目的地之前必须通过的 数，RIP接受的最长距离是 。
+77. ping命令用于测试网络的连通性，ping命令通过 协议来实现。
+78. 协议用于实现主机之间的文件系统共享。
+79. 在Linux操作系统中，设备都是通过特殊的 来访问。
+80. shell不仅是 ，它同时也是一种功能强大的编程语言。 是Linux的缺省shell。
+81. 用 符号将输出重定向内容附加在原文的后面。
+82. 增加一个用户的命令是： 。
+83 进行字符串查找，使用 命令。
+84. 使用 每次匹配若干个字符。
+85. 目录用来存放系统管理员使用的管理程序。
+二．单项选择题
+1. 下面的网络协议中，面向连接的的协议是： 。
+A 传输控制协议 B 用户数据报协议 C 网际协议 D 网际控制报文协议
+2. 在/etc/fstab文件中指定的文件系统加载参数中， 参数一般用于CD-ROM等移动设备。
+A defaults B sw C rw和ro D noauto
+3. Linux文件权限一共10位长度，分成四段，第三段表示的内容是 。
+A 文件类型 B 文件所有者的权限
+C 文件所有者所在组的权限 D 其他用户的权限
+4. 终止一个前台进程可能用到的命令和操作 。
+A kill B +C C shut down D halt
+5．在使用mkdir命令创建新的目录时，在其父目录不存在时先创建父目录的选项是 。
+A -m B -d C -f D -p
+6. 下面关于i节点描述错误的是 。
+A i节点和文件是一一对应的
+B i节点能描述文件占用的块数
+C i节点描述了文件大小和指向数据块的指针
+D 通过i节点实现文件的逻辑结构和物理结构的转换
+7. 一个文件名字为rr.Z，可以用来解压缩的命令是： 。
+A tar B gzip C compress D uncompress
+8. 具有很多C语言的功能，又称过滤器的是 。
+A Csh
+B tcsh
+C awk
+D sed
+9. 一台主机要实现通过局域网与另一个局域网通信，需要做的工作是 。
+A 配置域名服务器
+B 定义一条本机指向所在网络的路由
+C 定义一条本机指向所在网络网关的路由
+D 定义一条本机指向目标网络网关的路由
+10. 建立动态路由需要用到的文件有 。
+A /etc/hosts B /etc/HOSTNAME C /etc/resolv.conf D /etc/gateways
+11. 局域网的网络地址192.168.1.0/24，局域网络连接其它网络的网关地址是192.168.1.1。主机192.168.1.20访问172.16.1.0/24网络时，其路由设置正确的是 。
+A route add –net 192.168.1.0 gw 192.168.1.1 netmask 255.255.255.0 metric 1
+B route add –net 172.16.1.0 gw 192.168.1.1 netmask 255.255.255.255 metric 1
+C route add –net 172.16.1.0 gw 172.16.1.1 netmask 255.255.255.0 metric 1
+D route add default 192.168.1.0 netmask 172.168.1.1 metric 1
+12. 下列提法中，不属于ifconfig命令作用范围的是 。
+A 配置本地回环地址 B 配置网卡的IP地址
+C 激活网络适配器 D 加载网卡到内核中
+13. 下列关于链接描述，错误的是 。
+A 硬链接就是让链接文件的i节点号指向被链接文件的i节点
+B 硬链接和符号连接都是产生一个新的i节点
+C 链接分为硬链接和符号链接
+D 硬连接不能链接目录文件
+14. 在局域网络内的某台主机用ping命令测试网络连接时发现网络内部的主机都可以连同，而不能与公网连通，问题可能是 。
+A 主机IP设置有误
+B 没有设置连接局域网的网关
+C 局域网的网关或主机的网关设置有误
+D 局域网DNS服务器设置有误
+15. 下列文件中，包含了主机名到IP地址的映射关系的文件是： 。
+A /etc/HOSTNAME B /etc/hosts C /etc/resolv.conf D /etc/networks
+16. 不需要编译内核的情况是 。
+A 删除系统不用的设备驱动程序时 B 升级内核时
+C 添加新硬件时 D 将网卡激活
+17. 在shell中变量的赋值有四种方法，其中，采用name=12的方法称 。
+A 直接赋值 B使用read命令
+C 使用命令行参数 D使用命令的输出
+18. 命令可以从文本文件的每一行中截取指定内容的数据。
+A cp B dd C fmt D cut
+19. 下列不是Linux系统进程类型的是 。
+A 交互进程 B 批处理进程 C 守护进程 D 就绪进程
+20．配置Apache 1.3.19服务器需要修改的配置文件为_____ __ 。
+A httpd.conf B access.conf C srm.conf D named.conf
+21. 内核不包括的子系统是 。
+A 进程管理系统 B 内存管理系统 C I/O管理系统 D硬件管理系统
+22． 在日常管理中，通常CPU会影响系统性能的情况是： 。
+A CPU已满负荷地运转 B CPU的运行效率为30%
+C CPU的运行效率为50% D CPU的运行效率为80%
+23． 若一台计算机的内存为128MB，则交换分区的大小通常是 。
+A 64MB B 128MB C 256MB D 512MB
+24． 在安装Linux的过程中的第五步是让用户选择安装方式，如果用户希望安装部分组件（软件程序），并在选择好后让系统自动安装，应该选择的选项是 。
+A full B expert C newbie D menu
+25． Linux有三个查看文件的命令，若希望在查看文件内容过程中可以用光标上下移动来查看文件内容，应使用 命令。
+A cat B more C less D menu
+26． 下列信息是某系统用ps –ef命令列出的正在运行的进程， 进程是运行Internet超级服务器，它负责监听Internet sockets上的连接，并调用合适的服务器来处理接收的信息。
+A root 1 4.0 0.0 344 204? S 17:09 0:00 init
+B root 2 0.0 0.1 2916 1520? S 17:09 0:00 /sbin/getty
+C root 3 0.0 0.2 1364 632? S 17:09 0:00 /usr/sbin/syslogd
+D root 4 0.0 1344 1204? S 17:09 0:10 /usr/sbin/inetd
+27．在TCP/IP模型中，应用层包含了所有的高层协议，在下列的一些应用协议中， 是能够实现本地与远程主机之间的文件传输工作。
+A telnet B FTP C SNMP D NFS
+28．当我们与某远程网络连接不上时，就需要跟踪路由查看，以便了解在网络的什么位置出现了问题，满足该目的的命令是 。
+A ping B ifconfig C traceroute D netstat
+29．对名为fido的文件用chmod 551 fido 进行了修改，则它的许可权是 。
+A -rwxr-xr-x B -rwxr–r– C -r–r–r– D -r-xr-x—x
+30． 在i节点表中的磁盘地址表中，若一个文件的长度是从磁盘地址表的第1块到第11块，则该文件共占有 块号。
+A 256 B 266 C 11 D 256×10
+31． 用ls –al 命令列出下面的文件列表， 文件是符号连接文件。
+A -rw-rw-rw- 2 hel-s users 56 Sep 09 11:05 hello
+B -rwxrwxrwx 2 hel-s users 56 Sep 09 11:05 goodbey
+C drwxr–r– 1 hel users 1024 Sep 10 08:10 zhang
+D lrwxr–r– 1 hel users 2024 Sep 12 08:12 cheng
+32． DNS域名系统主要负责主机名和 之间的解析。
+A IP地址 B MAC地址 C 网络地址 D 主机别名
+33． WWW服务器是在Internet上使用最为广泛，它采用的是 结构。
+A 服务器/工作站 B B/S C 集中式 D 分布式
+34．Linux系统通过 命令给其他用户发消息。
+A less B mesg y C write D echo to
+35．NFS是 系统。
+A 文件 B 磁盘 C 网络文件 D 操作
+36． 命令可以在Linux的安全系统中完成文件向磁带备份的工作。
+A cp B tr C dir D cpio
+37．Linux文件系统的文件都按其作用分门别类地放在相关的目录中，对于外部设备文件，一般应将其放在 目录中。
+A /bin B /etc C /dev D /lib
+38．在重新启动Linux系统的同时把内存中的信息写入硬盘，应使用 命令实现。
+A # reboot B # halt C # reboot D # shutdown –r now
+39．网络管理具备以下几大功能：配置管理、 、性能管理、安全管理和计费管理等。
+A 故障管理 B 日常备份管理 C 升级管理 D 发送邮件
+40．关于代理服务器的论述，正确的是 A 。
+A 使用internet上已有的公开代理服务器，只需配置客户端。
+B 代理服务器只能代理客户端http的请求。
+C 设置好的代理服务器可以被网络上任何主机使用。
+D 使用代理服务器的客户端没有自己的ip地址。
+41.关闭linux系统（不重新启动）可使用命令 。
+A Ctrl+Alt+Del B halt C shutdown -r now D reboot
+42．实现从IP地址到以太网MAC地址转换的命令为： 。
+A ping B ifconfig C arp D traceroute
+43．在vi编辑器中的命令模式下，键入 可在光标当前所在行下添加一新行。
+A B C D A
+44．在vi编辑器中的命令模式下，删除当前光标处的字符使用 命令。
+A B C D
+45．在vi编辑器中的命令模式下，重复上一次对编辑的文本进行的操作，可使用 命令。
+A 上箭头 B 下箭头 C <.> D <*>
+46．用命令ls -al显示出文件ff的描述如下所示，由此可知文件ff的类型为 。
+-rwxr-xr– 1 root root 599 Cec 10 17:12 ff
+A 普通文件 B 硬链接 C 目录 D 符号链接
+47．删除文件命令为： 。
+A mkdir B rmdir C mv D rm
+48．在下列的名称中，不属于DNS服务器类型的是：____ _____。
+A Primary Master Server B Secondary Master Server
+C samba D Cache_only Server
+49．网络管理员对WWW服务器进行访问、控制存取和运行等控制，这些控制可在 文件中体现。
+A httpd.conf B lilo.conf C inetd.conf D resolv.conf
+50．邮件转发代理也称邮件转发服务器，它可以使用SMTP协议，也可以使用 协议。
+A FTP B TCP C UUCP D POP
+51．启动samba服务器进程，可以有两种方式：独立启动方式和父进程启动方式，其中前者是在
+文件中以独立进程方式启动。
+A /usr/sbin/smbd B /usr/sbin/nmbd C rc.samba D /etc/inetd.conf
+52．DHCP是动态主机配置协议的简称，其作用是可以使网络管理员通过一台服务器来管理一个网络系统，自动地为一个网络中的主机分配___ ______地址。
+A 网络 B MAC C TCP D IP
+53．为了保证在启动服务器时自动启动DHCP进程，应将 文件中的dhcpd=no改为dhcpd=yes。
+A rc.inet1 B lilo.conf C inetd.conf D httpd.conf
+54．对文件进行归档的命令为 。
+A dd B cpio C gzip D tar
+55．改变文件所有者的命令为 。
+A chmod B touch C chown D cat
+56．在给定文件中查找与设定条件相符字符串的命令为： 。
+A grep B gzip C find D sort
+57．建立一个新文件可以使用的命令为 。
+A chmod B more C cp D touch
+58．在下列命令中，不能显示文本文件内容的命令是： 。
+A more B less C tail D join
+59．在使用匿名登录ftp时，用户名为 。
+A users B anonymous C root D guest
+60．在实际操作中，想了解命令logname 的用法，可以键入 得到帮助。
+A logname –man B logname/？ C help logname D logname –help
+61．如果LILO被安装在MBR，使用 命令即可卸载LILO。
+A lilo –u B lilo –c C lilo –v D lilo -V
+62．当用命令ls –al查看文件和目录时，欲观看卷过屏幕的内容，应使用组合键 。
+A Shift+Home B Ctrl+ PgUp C Alt+ PgDn D Shift+ PgUp
+63．mc是UNIX风格操作系统的 。
+A 文件编辑器/程序编译器 B 配置网络的窗口工具
+C 目录浏览器/文件管理器 D Samba服务器管理工具
+64．i节点是一个 长的表，表中包含了文件的相关信息。
+A 8字节 B 16字节 C 32字节 D 64字节
+65．文件权限读、写、执行的三种标志符号依次是 。
+A rwx B xrw C rdx D srw
+66．Linux 文件名的长度不得超过 C 个字符。
+A 64 B 128 C 256 D 512
+67．进程有三种状态： 。
+A 准备态、执行态和退出态 B 精确态、模糊态和随机态
+C 运行态、就绪态和等待态 D 手工态、自动态和自由态
+68． 从后台启动进程，应在命令的结尾加上符号 。
+A & B @ C # D $
+69． 不是邮件系统的组成部分。
+A 用户代理 B 代理服务器 C 传输代理 D 投递代理
+70．在Shell脚本中，用来读取文件内各个域的内容并将其赋值给Shell变量的命令是 。
+A fold B join C tr D read
+71．crontab文件由六个域组成，每个域之间用空格分割，其排列如下： 。
+A MIN HOUR DAY MONTH YEAR COMMAND
+B MIN HOUR DAY MONTH DAYOFWEEK COMMAND
+C COMMAND HOUR DAY MONTH DAYOFWEEK
+D COMMAND YEAR MONTH DAY HOUR MIN
+72．用ftp进行文件传输时，有两种模式： 。
+A Word和binary B .txt和Word Document
+C ASCII和binary D ASCII和Rich Text Format
+73．某文件的组外成员的权限为只读；所有者有全部权限；组内的权限为读与写，则该文件的权限为 。
+A 467 B 674 C 476 D 764
+74．在DNS系统测试时，设named进程号是63，命令 是通知进程重读配置文件。
+A kill –USR2 63 B kill –USR1 63 C kill -INT 63 D kill –HUP 63
+75．Apache服务器默认的接听连接端口号是 。
+A 1024 B 800 C 80 D 8
+76．PHP和MySQL的联合使用解决了 。
+A 在Proxy上处理数据库的访问问题 B 在WWW服务器上处理黑客的非法访问问题
+C 在WWW服务器上处理数据库的访问问题
+D 在Sendmail邮件系统上处理数据库的访问问题
+77．OpenSSL是一个 。
+A 加密软件 B 邮件系统 C 数据库管理系统 D 嵌入式脚本编程语言
+78．Samba服务器的配置文件是 。
+A httpd.conf B inetd.conf C rc.samba D smb.conf
+79．关于DNS服务器，叙述正确的是 。
+A DNS服务器配置不需要配置客户端
+B 建立某个分区的DNS服务器时只需要建立一个主DNS服务器
+C 主DNS服务器需要启动named进程，而辅DNS服务器不需要
+D DNS服务器的root.cache文件包含了根名字服务器的有关信息
+80．退出交互模式的shell，应键入 。
+A B ^q C exit D quit
+
+81．将Windows C:盘(hda1)安装在Linux文件系统的/winsys目录下，命令是 。
+A root@l04.edu.cn:~#mount dev/had1 /winsys
+B root@l04.edu.cn:~#mount /dev/had1 /winsys
+C root@l04.edu.cn:~#mount /dev/had1 winsys
+D root@l04.edu.cn:~#mount dev/had1 winsys
+
+82．设超级用户root当前所在目录为：/usr/local，键入cd命令后，用户当前所在目录为 。
+A /home B /root C /home/root D /usr/local
+
+83．字符设备文件类型的标志是 。
+A p B c C s D l
+
+84．将光盘CD-ROM（hdc）安装到文件系统的/mnt/cdrom目录下的命令是 。
+A mount /mnt/cdrom B mount /mnt/cdrom /dev/hdc
+C mount /dev/hdc /mnt/cdrom D mount /dev/hdc
+
+85．将光盘/dev/hdc卸载的命令是 。
+A umount /dev/hdc B unmount /dev/hdc
+C umount /mnt/cdrom /dev/hdc D unmount /mnt/cdrom /dev/hdc
+
+86．在/home/stud1/wang目录下有一文件file，使用 可实现在后台执行命令，此命令将file文件中的内容输出到file.copy文件中。
+A cat file >file.copy B cat >file.copy
+C cat file file.copy & D cat file >file.copy &
+
+87．在DNS配置文件中，用于表示某主机别名的是： 。
+A NS B CNAME C NAME D CN
+
+88．可以完成主机名与IP地址的正向解析和反向解析任务的命令是： 。
+A nslookup B arp C ifconfig D dnslook
+
+89．下列变量名中有效的shell变量名是： 。
+A -2-time B _2$3 C trust_no_1 D 2004file
+
+90．qmail是 。
+A 收取邮件的协议 B 邮件服务器的一种 C 发送邮件的协议 D 邮件队列
+
+91．已知某用户stud1，其用户目录为/home/stud1。如果当前目录为/home，进入目录/home/stud1/test的命令是 。
+A cd test B cd /stud1/test C cd stud1/test D cd home
+
+92．已知某用户stud1，其用户目录为/home/stud1。分页显示当前目录下的所有文件的文件或目录名、用户组、用户、文件大小、文件或目录权限、文件创建时间等信息的命令是 。
+A more ls –al B more –al ls C more < ls –al D ls –al | more
+
+93．关于进程调度命令， 是不正确的。
+A 当日晚11点执行clear命令，使用at命令：at 23:00 today clear
+B 每年1月1日早上6点执行date命令，使用at命令：at 6am Jan 1 date
+C 每日晚11点执行date命令，crontab文件中应为：0 23 * * * date
+D 每小时执行一次clear命令，crontab文件中应为：0 */1 * * * clear
+
+94．系统中有用户user1和user2，同属于users组。在user1用户目录下有一文件file1，它拥有644的权限，如果user2用户想修改user1用户目录下的file1文件，应拥有 权限。
+A 744 B 664 C 646 D 746
+
+95．如果想配置一台匿名ftp服务器，应修改 文件。
+A /etc/gateway B /etc/ftpservers C /etc/ftpusers D /etc/inetd.conf
+
+96．Samba服务器的进程由 两部分组成 。
+A named和sendmail B smbd和nmbd C bootp和dhcpd D httpd和squid
+
+97．要配置NFS服务器，在服务器端主要配置 文件。
+A /etc/rc.d/rc.inet1 B /etc/rc.d/rc.M C /etc/exports D /etc/rc.d/rc.S
+
+98．为保证在启动服务器时自动启动DHCP进程，应对 文件进行编辑。
+A /etc/rc.d/rc.inet2 B /etc/rc.d/rc.inet1 C /etc/dhcpd.conf D /etc/rc.d/rc.S
+
+99．在配置代理服务器时，若设置代理服务器的工作缓存为64MB，配置行应为 。
+A cache 64MB B cache_dir ufs /usr/local/squid/cache 10000 16 256
+C cache_ mgr 64MB D cache_ mem 64MB
+
+100．安全管理涉及的问题包括保证网络管理工作可靠进行的安全问题和保护网络用户及网络管理对象问题。 属于安全管理的内容。
+A 配置设备的工作参数 B 收集与网络性能有关的数据
+C 控制和维护访问权限 D 监测故障
+
+101．以下命令对中，正确的是： 。
+A ls和sl B cat和tac C more和erom D exit和tixe
+
+102． 命令是在vi编辑器中执行存盘退出。
+A :q B ZZ C :q! D :WQ
+
+103．下列关于/etc/fstab文件描述，正确的是 。
+A fstab文件只能描述属于linux的文件系统
+B CD_ROM和软盘必须是自动加载的
+C fstab文件中描述的文件系统不能被卸载
+D 启动时按fstab文件描述内容加载文件系统
+
+104．通过文件名存取文件时，文件系统内部的操作过程是通过 。
+A 文件在目录中查找文件数据存取位置。
+B 文件名直接找到文件的数据，进行存取操作。
+C 文件名在目录中查找对应的I节点，通过I节点存取文件数据。
+D 文件名在中查找对应的超级块，在超级块查找对应i节点，通过i节点存取文件数据
+
+105．Linux将存储设备和输入/输出设备均看做文件来操作， 不是以文件的形式出现。
+A 目录 B 软链接 C i节点表 D 网络适配器
+
+106．关于i节点和超级块，下列论述不正确的是 。
+A i节点是一个长度固定的表
+B 超级块在文件系统的个数是唯一的
+C i节点包含了描述一个文件所必需的全部信息
+D 超级块记录了i节点表和空闲块表信息在磁盘中存放的位置
+
+107． 设备是字符设备。
+A hdc B fd0 C hda1 D tty1
+
+108． 目录存放着Linux的源代码。
+A /etc B /usr/src C /usr D /home
+
+109．关于文件系统的安装和卸载，下面描述正确的是 。
+A 如果光盘未经卸载，光驱是打不开的
+B 安装文件系统的安装点只能是/mnt下
+C 不管光驱中是否有光盘，系统都可以安装CD-ROM设备
+D mount /dev/fd0 /floppy 此命令中目录/floppy是自动生成的
+
+110． 不是进程和程序的区别。
+A 程序是一组有序的静态指令，进程是一次程序的执行过程
+B 程序只能在前台运行，而进程可以在前台或后台运行
+C 程序可以长期保存，进程是暂时的
+D 程序没有状态，而进程是有状态的
+
+111．文件exer1的访问权限为rw-r–r–，现要增加所有用户的执行权限和同组用户的写权限，下列命令正确的是 。
+A chmod a+x g+w exer1 B chmod 765 exer1
+C chmod o+x exer1 D chmod g+w exer1
+
+112．有关归档和压缩命令，下面描述正确的是 。
+
+A 用uncompress命令解压缩由compress命令生成的后缀为.zip的压缩文件
+B unzip命令和gzip命令可以解压缩相同类型的文件
+C tar归档且压缩的文件可以由gzip命令解压缩
+D tar命令归档后的文件也是一种压缩文件
+
+113．不是shell具有的功能和特点的是 。
+A 管道 B 输入输出重定向 C 执行后台进程 D 处理程序命令
+
+114．下列对shell变量FRUIT操作，正确的是： 。
+A 为变量赋值：$FRUIT=apple B 显示变量的值：fruit=apple
+C 显示变量的值：echo $FRUIT D 判断变量是否有值：[ -f “$FRUIT” ]
+
+三．简答题
+1．简述Linux文件系统通过i节点把文件的逻辑结构和物理结构转换的工作过程。
+
+2．简述进程的启动、终止的方式以及如何进行进程的查看。
+
+3. 简述DNS进行域名正向解析的过程。
+
+4．系统管理员的职责包括那些？管理的对象是什么？
+
+5．简述安装Slackware Linux系统的过程。
+
+6．什么是静态路由，其特点是什么？什么是动态路由，其特点是什么？
+
+7．进程的查看和调度分别使用什么命令？
+
+8．当文件系统受到破坏时，如何检查和修复系统？
+
+9．解释i节点在文件系统中的作用。
+
+10．什么是符号链接，什么是硬链接？符号链接与硬链接的区别是什么？
+
+11．在对linux系统分区进行格式化时需要对磁盘簇（或i节点密度）的大小进行选择，请说明选择的原则。
+
+12．简述网络文件系统NFS，并说明其作用。
+
+13．某/etc/fstab文件中的某行如下：
+/dev/had5 /mnt/dosdata msdos defaults,usrquota 1 2
+请解释其含义。
+
+14．Apache服务器的配置文件httpd.conf中有很多内容，请解释如下配置项：
+（1）MaxKeepAliveRequests 200 （2）UserDir public_html
+（3）DefaultType text/plain （4）AddLanguare en.en
+（5）DocumentRoot“/usr/local/httpd/htdocs”
+（6）AddType application/x-httpd-php.php.php.php4
+
+15．某Linux主机的/etc/rc.d/rc.inet1文件中有如下语句，请修正错误，并解释其内容。
+/etc/rc.d/rc.inet1：
+……
+ROUTE add –net default gw 192.168.0.101 netmask 255.255.0.0 metric 1
+ROUTE add –net 192.168.1.0 gw 192.168.0.250 netmask 255.255.0.0 metric 1
+
+16．试解释apache服务器以下配置的含义：
+（1）port 1080 （2）UserDir userdoc
+（3）DocumentRoot “/home/htdocs”
+（4）
+Options Indexes FollowSymLinks
+AllowOverride None
+Order deny,allow
+deny from all
+allow from 192.168.1.5
+（5）Server Type Standlone
+
+17．简述使用ftp进行文件传输时的两种登录方式？它们的区别是什么？常用的ftp文件传输命令是什么？
+
+四．编程与应用题
+1．用Shell编程，判断一文件是不是字符设备文件，如果是将其拷贝到 /dev 目录下。
+
+2．请下列shell程序加注释，并说明程序的功能和调用方法：
+#!/bin/sh
+#
+# /etc/rc.d/rc.httpd
+#
+# Start/stop/restart the Apache web server.
+#
+# To make Apache start automatically at boot, make this
+# file executable: chmod 755 /etc/rc.d/rc.httpd
+#
+case “$1″ in
+‘start’)
+/usr/sbin/apachectl start ;;
+‘stop’)
+/usr/sbin/apachectl stop ;;
+‘restart’)
+/usr/sbin/apachectl restart ;;
+*)
+echo “usage $0 start|stop|restart” ;;
+esac
+
+3．设计一个shell程序，添加一个新组为class1，然后添加属于这个组的30个用户，用户名的形式为stdxx，其中xx从01到30。
+
+4．编写shell程序，实现自动删除50个账号的功能。账号名为stud1至stud50。
+
+5．某系统管理员需每天做一定的重复工作，请按照下列要求，编制一个解决方案：
+（1）在下午4 :50删除/abc目录下的全部子目录和全部文件；
+（2）从早8:00～下午6:00每小时读取/xyz目录下x1文件中每行第一个域的全部数据加入到/backup目录下的bak01.txt文件内；
+（3）每逢星期一下午5:50将/data目录下的所有目录和文件归档并压缩为文件：backup.tar.gz；
+（4）在下午5:55将IDE接口的CD-ROM卸载（假设：CD-ROM的设备名为hdc）；
+（5）在早晨8:00前开机后启动。
+
+6．设计一个shell程序，在每月第一天备份并压缩/etc目录的所有内容，存放在/root/bak目录里，且文件名为如下形式yymmdd_etc，yy为年，mm为月，dd为日。Shell程序fileback存放在/usr/bin目录下。
+
+7．有一普通用户想在每周日凌晨零点零分定期备份/user/backup到/tmp目录下，该用户应如何做？
+
+8.设计一个Shell程序，在/userdata目录下建立50个目录，即user1～user50，并设置每个目录的权限，其中其他用户的权限为：读；文件所有者的权限为：读、写、执行；文件所有者所在组的权限为：读、执行。i
+
+五、多选题
+1．关于硬链接的描述正确的（BE）。
+A 跨文件系统 B不可以跨文件系统 D可以做目录的连接
+C 为链接文件创建新的i节点 E链接文件的i节点同被链接文件的i节点
+
+2．在网站发布用户wang的个人网页时，需要创建用户网页目录，假定用户网页目录设定为web
+（用户目录在/home目录下），如下描述正确的是（BCE）
+A 存放用户网页的绝对路径/wang/web B存放用户网页的目录～wang/
+C 存放用户网页的绝对路径/home/wang/web D存放用户网页的绝对路径/home/web
+E 在本机访问用户wang的个人网页的URL地址http://localhost/～wang/
+
+3．在一台WWW服务器上将端口号设定为8000，默认的网页文件index.html，服务器网页的根目录/www。在本机访问服务器时，正确的用法是（BDE）
+A 浏览器访问该服务器的URL地址http://localhost/
+B 浏览器访问该服务器的URL地址http://localhost:8000/
+C 浏览器访问该服务器的用户li网页URL地址http://localhost/~li
+D 浏览器访问该服务器的用户li网页URL地址http://localhost:8000/~li
+E 浏览器访问该服务器的URL地址localhost:8000/
+
+4．在shell编程中关于$2的描述正确的是（CE）
+A 程序后携带了两个位置参数 B 宏替换 C 程序后面携带的第二个位置参数
+D 携带位置参数的个数 E 用$2引用第二个位置参数
+
+5．某文件的权限是 – r w x r – - r- -，下面描述正确的是(CD)
+A 文件的权限值是755 B 文件的所有者对文件只有读权 限
+C 文件的权限值是 744 D 其他用户对文件只有读权限 E同组用户对文件只有写权限
+
+6．关于OpenSSH的作用的描述正确的是（ACE）
+A 开放源代码的安全加密程序 B OpenSSH常用于为http协议加密
+C OpenSSH用于提高远程登录访问的安全性 D 它和telnet实用同样的端口号
+E OpenSSH是免费下载的应程序
+
+7．关于NFS服务器描述正确的是（BC）
+A 网络中实现Windows系统之间文件系统共享的应用软件
+B 网络中实现Linux系统之间文件系统共享的应用软件
+C 网络中实现Unix系统之间文件系统共享的应用软件
+D 网络中实现Windows系统和Unix之间文件系统共享的应用软件
+E 网络中实现Windows系统和Linux之间文件系统共享的应用软件
+
+8．关于sed描述正确的是（ABD）
+A sed 是Linux系统中的流编辑器 B sed 是UNIX系统中的流编辑器
+C sed 网络文件系统的类型 D 利用管道对标准输入/标准输入的数据进行编辑和组合
+E sed是NFS的应用程序
+
+9．关于限制磁盘限额，描述正确的是（ABD）
+A 使用edquota可以监控系统所有用户使用的磁盘空间，并在接近极限时提示用户
+B 用户组的磁盘限额是用户组内所有用户予设磁盘空间总和
+C 单个用户的磁盘限额就是该用户所在用户组内所有磁盘限额的总合
+D 在Linux系统下限制用户使用的磁盘空间可以使用edquota
+E 用户组的磁盘限额就是该用户组内拥有最大磁盘限额值的用户的磁盘限额
+
+10．关于建立系统用户的正确描述是（）
+A 在Linux系统下建立用户使用adduser命令
+B 每个系统用户分别在/etc/passwd和/etc/shadow文件中有一条记录
+C 访问每个用户的工作目录使用命令“cd /用户名”
+D 每个系统用户在默认状态下的工作目录在/home/用户名
+E 每个系统用户在/etc/fstab文件中有一条记录

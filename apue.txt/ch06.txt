@@ -1,0 +1,404 @@
+系统数据文件和信息
+6.1引言
+UNIX系统的正常运行需要使用大量与系统有关的数据文件，例如，口令文件/etc/passwd和组文件/etc/group就是经常由多种程序使用的两个文件。用户每次登录UNIX系统，以及每次执行ls -l命令时都要使用口令文件。
+由于历史原因，这些数据文件都是ASCII文本文件，并且使用标准I/O库读这些文件。但是，对于较大的系统，顺序扫描口令文件非常耗时，我们需要能够以非ASCII文本格式存放这些文件，但仍向应用程序提供可以处理任何一种文件格式的接口。针对这些数据文件的可移植接口是本章的主题。本章还介绍了系统标识函数.时间和日期函数。
+
+6.2 口令文件
+UNIX系统的口令文件（POSIX.1则将其称为用户数据库）包含了表6-1中所示的各字段，这些字段包含在<pwd.h>中定义的passwd结构中。
+注意，POSIX-1只指定了passwd结构包含的10个字段中的5个。大多数平台至少支持其中7个字段。BSD派生的平台支持全部10个字段。
+
+表6-1 /etc/passwd文件中的字段
+---
+说明  struct passwd成员 POSIX.1 FreeBSD 5.2.1   Linux 2.4.22    Mac OS X 10.3   Solaris 9
+用户名 char *pw_name   •               •
+加密口令    char *pw_passwd                 
+数值用户ID  uid_t pw_uid    -               
+数值组 gid_t pw_gid    •               
+注释卞段    char *pw_gecos                  
+初始C作目录  char *pw_dir    •               
+初始shelK用户程序）    char *pw_shell  •               
+用户ii•问类 char *pw_class                  
+F次更改口令时间    time一t pw 一 change                  
+账户到期时f曰丨    time_t pw一expire                    
+---
+由干历史原因，口令文件存储在/etc/passwd中，而且是一个ASCII文件。每一行包含表6-1中所示的各字段，字段之间用冒号分隔。例如，在Linux上，该文件中可能有下列四行：
+---
+root：x：0：0：root：/root：/bin/bash
+squid：x：23:23：：/var/spool/squid：/dev/null 
+nobody:x:65534：65534：Nobody：/home：/bin/sh 
+sar：x：205：105：Stephen Rago：/home/sar：/bin/bash
+---
+
+关于这些登录项请注意下列各点：
+•通常有一个用户名为root的登录项，其用户ID是0(超级用户）。
+•加密口令字段包含了一个占位字符。在早期的UNIX系统版本中，该字段存放加密口令。将加密口令存放在一个人人可读的文件中构成了一个安全性漏洞，所以现在将加密口令存放在另一个位置。在下一节讨论口令时，我们将详细涉及此问题。
+•口令文件项中的某些字段可能是空。如果加密口令字段为空，这通常就意味着该用户没有口令（不推荐这样做）。squid登录项有一个空白字段：注释字段。空白注释字段不产生任何影响。
+•shell字段包含了一个可执行程序名，它被用作该用户的登录shell。若该字段为空，则取系统默认值，通常是/bin/sh。注意，squid登录项的该字段为/dev/null。显然，这是一个设备，不能执行，因此将其用于此处的目的是，阻止任何人以用户squid的名义 登录到该系统。
+很多股务对于帮助它们得以实现的不同守护进程使用不同的用户ID(见第13章），squid项是为实现squid代理缓冲服务而设置的。
+•为了阻止一个特定用户登录系统，除使用/dev/null之外，还有若干种替代方法。一种常见的方法是，将/bin/false用作登录shell。它简单地以不成功（非0)状态终止，该shell将此种终止状态判断为假。另一种常见方法是，用/bin/true禁止一个账户。它所做的一切是以成功（0)状态终止。某些系统提供nologin命令，它打印可自定义的出错信息，然后以非0状态终止。
+•使用nobody用户名的目的是，使任何人都可登录至系统，但其用户ID(65534)和组ID(65534)不提供任何特权。该用户ID和组ID只能访问人人皆可读、写的文件（假定用户ID 65534和组ID 65534并不拥有任何文件，而实际情况就应如此)。
+•提供finger(l)命令的某些UNIX系统支持注释字段中的附加信息。其中，各部分之间都用逗号分隔：用户姓名、办公室地点、办公室电话号码以及家庭电话号码等。另外，如果注释字段中的用户姓名是一个&,则将其替换为登录名。例如，可以有下列记录：
+
+sar：x：205：105：Steve Rago, SF 5-121, 555-1111, 555-2222：/home/sar：/bin/sh
+
+使用finger命令就可打印Steve Rago的有关信息。
+
+$ finger -p Bar
+Login： sar  Name： Steve Rago
+Directory： /home/sar    Shell： /bin/sh
+Office：SF 5-121, 555-1111 Home Phone: 555-2222 On since Mon Jan 19 03:57 (EST) on ttyvO (messages off)
+No Mail.
+即使你所使用的系统并不支持finger命令，这些信息仍可存放在注释字段中，该字段只是-个注释，并不由系统实用程序解释。
+某些系统提供了vipw命令，允许管理员使用该命令编辑口令文件。vipw命令串行化对口令文件所做的更改，并且确保所做的更改与其他相关文件保持一致。系统也常常经由图形用户界面（GUI)提供类似的功能。
+ 
+POSIX.1只定义了两个获取口令文件项的函数。在给出用户登录名或数值用户ID后，这两个函数就能査询相关项。
+#include <pwd.h>
+struct passwd *getpvAiid (uid_t uid)；
+struct passwd *getpwnam(const char *name)；
+两个函数返回值：若成功则返回指针，若出错则返回NULL
+getpwuid函数由ls(l)程序使用，它将i节点中的数值用户ID映射为用户登录名。在键入登录名时，getpwnam函数由login(l)程序使用。
+这两个函数都返回一个指向passwd结构的指针，该结构已由这两个函数在执行时填入信息。passwd结构通常是相关函数内的静态变量，只要调用相关函数，其内容就会被重写。
+如果要査看的只是登录名或用户ID，那么这两个POSIX.1函数能满足要求，但是也有些程序要査看整个口令文件。下列三个函数则可用于此种目的。
+
+#include <pwd.h>
+struct passwd *getpwent(void);
+返回值：若成功则返回指针，若出错或到达文件结尾则返回NULL
+void setpwent (void);
+void endpwent(void);
+
+基本POSIX.1标准没有定义这三个函数。在Single UNIX Specification中.它们被定义为XSI扩展。因此，预期所有UNIX实现都将提供这些函数。
+调用getpwent时，它返回口令文件中的下一个记录项。如同上面所述的两个POSIX.1函数一样，它返回一个由它填写好的password结构的指针。每次调用此函数时都重写该结构。在第一次调用该函数时，它打开它所使用的各个文件。在使用本函数时，对口令文件中各个记录项的安排顺序并无要求。某些系统采用散列算法对/etc/passwd文件中的各项排序。
+函数setpwent反绕它所使用的文件，endpwent则关闭这些文件。在使用getpwent査看完口令文件后，一定要调用endpwent关闭这些文件。getpwent知道什么时间它应当打开它所使用的文件（第一次被调用时），但是它并不知道何时关闭这些文件。
+
+实例
+程序清单6-1给出了getpwnam函数的-个实现。
+程序清单6-1 getpwnam函数
+---
+#include <pwd.h>
+#include <stddef.h>
+#include <string.h>
+struct passwd *
+getpwnam{const char *name)
+{
+struct passwd *ptr； setpwent()；
+while ((ptr = getpwent()) != NULL)
+if (strcmp(name, ptr->pw—name) == 0) break; /* found a match */
+endpwent()； 、
+return(ptr)； /★ ptr is NULL if no match found ★/
+}
+---
+在程序开始处调用setpwent是自我保护性的措施，以便在调用者在此之前已经调用getpwent打开了有关文件情况下，反绕有关文件使它们定位到文件开始处。getpwnam和getpwuid调用完成后不应使有关文件仍处于打开状态，所以应调用endpwent关闭它们。
+
+6.3阴影口令
+加密口令是经单向加密算法处理过的用户口令副本。因为此算法是单向的，所以不能从加密口令猜测到原来的口令。
+历史上使用的算法（见Morris和Thompson[1979])总是从64字符集[a-zA-Z0-9./]中产生13个可打印字符。某些较新的系统使用MD5算法对口令加密，为每个加密口令产生31个字符。（加密口令的字符愈多，这些字符的组合也就愈多，于是用各种可能组合来猜测口令的难度就愈大。）当我们将一个字符放在加密口令字段中时，可以确保任一加密口令都不会与其相匹配。
+给出一个加密口令，找不到一种算法可以将其逆转到普通文本口令（普通文本口令是在Password:提示符后键入的口令)。但是可以对口令进行猜测，将猜测的口令经单向算法变换成加密形式，然后将其与用户的加密口令相比较。如果用户口令是随机选择的，那么这种方法并不是很有用。但是用户往往以非随机方式选择口令（例如配偶的姓名、街名、宠物名等）。一个经常重复的试验是先得到一份口令文件，然后用试探方法猜测口令。（Garfinkel等[2003]的第4章对UNIX口令及口令加密处理模式的历史情况及细节进行了说明。）
+为使企图这样做的人难以获得原始资料（加密口令），现在，某些系统将加密口令存放在另一个通常称为阴影口令（shadowpassword)的文件中。该文件至少要包含用户名和加密口令。与该口令相关的其他信息也可存放在该文件中（表6-2)。
+
+表6-2 etc/shadow文件中的字段
+---
+说明  struct spwd成员
+用户登录名   char * sp_namp
+加密口令    char * sp_pwdp
+上次更改口令以来经过的时间   int sp一Istchg
+经过多少天后允许更改  int sp_min
+要求更改尚余天数    int sp—max
+到期警告天数  int sp_warn
+账户不活动之前尚余天数 int sp_inact
+账户到期天数  int sp_expire
+保留  unsigned int sp—flag
+---
+只有用户登录名和加密口令这两个字段是必需的。其他字段用于控制口令的改动频率（称为口令的衰老）以及账户保持活动状态的时间。
+阴影口令文件不应是一般用户可以读取的。仅有少数几个程序需要存取加密口令，例如login(l)和passwd(l),这些程序常常是设置用户ID为root的程序。有了阴影口令后，普通口令文件/etc/passwd可由各用户自由读取。在Linux 2.4.22和Solaris 9中，与访问口令文件的一组函数类似，有另一组函数可用于访问阴影口令文件。
+---
+#include <shadow.h> 
+struct spwd *getspnam(const char    *name)；
+struct spwd *getspent(void)；    
+两个函数返回值：若成功则返回指针，若出错则返回null
+void setspent(void)；    
+void endspent(void);    
+
+在FreeBSD 5.2.1和MAC OS X 10.3中，没有阴影口令结构。附加的账户信息存放在口令文 件中（见表6-1)。
+
+6.4组文件
+UNIX组文件（P0SIX.1称其为组数据库）包含了表6-3中所示的字段。这些字段包含在<grp.h>中所定义的group结构中。
+表6-3 /etc/group文件中的字段
+---
+说明  struct group成员  POSIX.1 FreeBSD 5.2.1   Linux 2,4.22    Mac OS X 10.3   Solaris 9
+组名  char    *gr_name    •   着   •   •   •
+加密口令    char    *gr_passwd      •   •   •   •
+数值组It)  int gr_gid  •   •   着   •   •
+指向各用户名的 指针的数组   char    **gr_mem    '   '   '   '   ■
+---
+字段gr_mem是一个指针数组，其中每个指针各指向一个属于该组的用户名。该数组以空指针结尾。
+可以用下列两个由P0SIX.1定义的函数来查看组名或数值组ID。
+
+#include <grp.h>
+struct group getgrgid (gid_t gid)；
+struct group *getgrnam(const char *name)；
+两个函数返回值：若成功则返回指针，若出错则返回NULL
+如同对口令文件进行操作的函数一样，这两个函数通常也返回指向一个静态变量的指针,在每次调用时都重写该静态变量。
+如果需要搜索整个组文件，则需使用另外几个函数。下列三个函数类似于针对口令文件的三个函数。
+
+#include <grp.h>
+struct group *getgrent(void);
+返回值：若成功则返回指针，若出错或到达文件结尾则返回NULL
+void setgrent(void)；
+void endgrent(void)；
+这三个函数不是基本POSIX.1标准的组成部分。Single UNIX Specification的XSI扩展定义了这些函数。所有UNIX系统都提供这三个函数。
+setgrent函数打开组文件（如若它尚未被打开）并反绕它。getgrent函数从组文件中读下一个记录，如若该文件尚未打开则先打开它。endgrent函数关闭组文件。
+
+6.5附加组ID
+在UNIX中，对组的使用已经作了些更改。在V7中，每个用户任何时候都只属干一个组。当用户登录时，系统就按口令文件记录项中的数值组ID，赋给他实际组ID。可以在任何时候执行newgrpd)以更改组ID。如果newgrp命令执行成功（关于权限规则，请参阅手册），则实际组ID就更改为新的组ID,它将被用于后续的文件访问权限检査。执行不带任何参数的newgrp,则可返回到原来的组。
+这种组成员形式一直维持到1983年左右。此时，4.2BSD引入了附加组ID(supplementary group ID)的概念。我们不仅可以属于口令文件记录项中组ID所对应的组，也可属于多达16个另外的组。文件访问权限检查相应被修改为：不仅将进程的有效组ID与文件的组ID相比较，而且也将所有附加组ID与文件的组ID进行比较。
+
+附加组ID是POSIX.1要求的特性。（在较早的POSIX.1版本中，该特性是可选的。）常量NGROUPS—MAX(见表2-10)规定了附加组ID的数量，其常用值是16(见表2-12)。
+使用附加组ID的优点是不必再显式地经常更改组。一个用户会参加多个项目，因此也就要同时属于多个组。此类情况是经常有的。
+为了获取和设置附加组ID,提供了下列三个函数：
+
+#include <unistd.h>
+int get groups (int gidsetsize, gid_t grouplist [])；
+返回值：若成功则返回附加组ID数，若出错则返回-1
+#include <grp.h> /* on Linux */
+#include <unistd.h> /* on FreeBSD, Mac OS X, and Solaris */
+int setgroups (int ngroups, const gid_t grouplist [])；
+#include <grp.h> /* on Linux and Solaris */
+#include <unistd.h> /* on FreeBSD and Mac OS X */
+int initgroups (const char * username, gid_t basegid)；
+两个函数返回值：若成功则返回0，若出错则返回-1
+
+在这三个函数中。POSIX.1只说明了getgroups。因为setgroups和initgroups是特权操作，所以它们并非POSIX.1的组成部分。但是，本书说明的所有四种平台都支持这三个函数。
+在Mac OS X 10.3中，basegid被声明为int类型。
+getgroups将各附加组ID填写到数组groMpto中，该数组中存放的元素最多为咖此⑷汉个。实际填写到数组中的附加组ID数由函数返回。
+ 
+6.7其他数据文件
+作为一个特例，如若gidsetsize为0,则函数只返回附加组ID数，而对数组则不作修改（这使调用者可以确定grouplist数组的长度，以便进行分配)。
+setgroups可由超级用户调用以便为调用进程设置附加组ID表。是组ID数组，而ngroups指定了数组中的元素个数。ngroups的值不能大于NGROUPS_MAX。
+通常，只有initgroups函数调用setgroups,initgroups读整个组文件（用前而说明的函数getgrent、setgrent和endgrent),然后对wsemame确定其组的成员关系。然后,它调用setgroups,以便为该用户初始化附加组ID表。因为initgroups调用setgroups,所以只有超级用户才能调用initgroups。除了在组文件中找到i«ernawe是成员的所有组，initgroups也在附加组ID表中包括了basegid。basegid是username在口令文件中的组ID。
+只有少数几个程序调用initgroups,例如login(1)程序在用户登录时调用该函数。
+
+6.6实现的区别
+我们已讨论了Linux和Solaris支持的阴影口令文件。FreeBSD和MAC OS X则以不同方式存储加密口令。表6-4总结了本书涉及的四种平台如何存放用户和组信息。
+
+表6-4账户实现的区别
+
+信 息 FreeBSD 5.2.1   Linux 2.4.22    Mac OS X 10.3   Solaris 9
+账户信息    /etc/passwd /etc/passwd netinfo /etc/passwd
+加密口令    /etc/master.passwd  /etc/shadow netinfo /etc/shadow
+散列口令文件？ 是   否   否   否
+组信息 /etc/group  /etc/group  netinfo /etc/group
+
+在FreeBSD中，阴影口令文件是/etc/master.passwd。可以使用特殊命令编辑该文件，它反过来会从阴影口令文件产生/etc/passwd的一个副本。另外，还会产生该文件的散列版本。/etc/pwd.db是/etc/passwd的散列版本，/etc/spwd.db是/etc/master.passwd的散列版本。这些为大型系统提供了更好的性能。
+但是，Mac OS X只以单用户模式使用/etc/passwd和/etc/master.passwd。（在维护系统时，单用户模式通常意味着不能提供任何系统服务。）正常运行期间的多用户方式即netinfo目录服务提供对用户和组账户信息的访问。
+虽然Linux和Solaris支持类似的阴影口令接口，但两者之间存在某些微妙的区别。例如，表6-2中所示的整型字段在Solaris中定义为int类型，在Linux中则定义为long int。另一个区别是账户不活动字段。Solaris将其定义为用户上次登录以来所经过的天数，而Linux则将其定义为到口令过期的尚余天数。
+在很多系统中，用户和组数据库是用网络信息服务（Network Information Service, NIS)实现的。这使管理员可编辑数据库的主副本，然后将它自动分发到组织中的所有服务器上。客户端系统可以联系服务器以査看用户和组的有关信息。NIS+和轻量级目录访问协议(Lightweight Directory Access Protocol, LDAP)提供了类似功能。很多系统通过配置文件/etc/nsswitch.conf来控制管理每一类信息的方法。
+
+6.7其他数据文件
+至此仅讨论了两个系统数据文件——口令文件和组文件。在日常操作中，UNIX系统还使用很多其他文件。例如，BSD网络软件有一个记录各网络服务器所提供服务的数据文件(/etc/services),有一个记录协议信息的数据文件（/etc/protocols),还有一个则是记录网络信息的数据文件（/etc/networks)。幸运的是，针对这些数据文件的接口都与上述针对口令文件和组文件的接口相似。
+一般情况下，对于每个数据文件至少有三个函数：
+(1) get函数：读下一个记录，如果需要，还可打开该文件。这些函数通常返回指向一个结构的指针。当已到达文件尾端时则返回空指针。大多数get函数返回指向一个静态结构的指针，如果要保存其内容，则需复制它。
+(2) set函数：打开相应数据文件（如果尚未打开），然后反绕该文件。如果希望在相应文件起始处开始处理，则调用此函数。
+(3) end函数：关闭相应数据文件。正如前述，在结束了对相应数据文件的读、写操作后,总应调用此函数以关闭所有相关文件。
+另外，如果数据文件支持某种形式的关键字捜索，则会提供捜索具有指定关键字记录的例程。例如，对于口令文件，提供了两个按关键字进行捜索的程序：getpwnam寻找具有指定用户名的记录；getpwuid寻找具有指定用户ID的记录。
+表6-5中列出了一些这样的例程，这些都是UNIX系统常用的。在表6-5中列出了针对口令文件和组文件的函数，这些已在上面说明过。表6-5中也列出了一些与网络有关的函数。对于表5中列出的所有数据文件都有get、set和end函数。
+
+表6-5存取系统数据文件的类似例程
+---
+说明  数据文件    头文件 结构  附加的关键字查找函数
+口令  /etc/passwd <pwd.h> passwd  getpwnam, getpwuid
+组   /etc/group  <grp.h> group   getgrnam、 getgrgid
+阴影  /etc/shadow <shadow.h>  spwd    getspnam
+机   /etc/hosts  <netdb.h>   hostent ge thos tbyname, ge thos tbyaddr
+网络  /etc/networks   <netdb.h>   netent  getnetbyname、 getnetbyaddr
+协议  /etc/protocols  <netdb.h>   protoent    getprotobyname、ge tpro tobynumber
+服务  /etc/services   <netdb.h>   servent getservbyname、getservbyport
+---
+在Solaris中.表6-5中的最后四个数据又件都是符号链接，它们都链接到目录/etc/inet下的同名文件上。大多数UNIX都有类似于该表中所列的附加函数，但是这些附加的函数旨在处理系统管理文件,专用干各个实现。
+
+6.8登录账户记录
+大多数UNIX系统都提供下列两个数据文件：utmp文件，它记录当前登录进系统的各个用户，wtmp文件，它跟踪各个登录和注销事件。在V7中，每次写入这两个文件中的是包含下列结构的一条二进制记录：
+---
+name of the operating system */
+name of this node */
+current release of operating system */
+current version of this release */
+name of hardware type */
+struct utsname { char sys name []； char nodename[]； char release []； char version []； char machine []；
+    ---
+登录时，login程序填写此类型结构，然后将其写入到utmp文件中，同时也将其添写到wtmp文件中。注销时，init进程将utmp文件中相应的记录擦除（每个字节都填以0)，并将一个新记录添写到wtmp文件中。在wtmp文件的注销记录中，将ut—name字段清0。在系统重新启动时，以及更改系统时间和日期的前后，都在wtmp文件中添写特殊的记录项。who(l)程序读utmp文件，并以可读格式打印其内容。后来的UNIX版本提供了last(l)命令，它读wtmp文件并打印所选择的记录。
+大多数UNIX版本仍提供utmp和wtmp文件，但正如所期望的，其中的信息量却增加了。V7中20字节的结构在SVR2中已扩充为36字节，而在SVR4中，utmp结构已扩充到多于350字节。
+在Solaris中，这些记录的详細格式请参见手册页utmpx(4)。在Solaris 9中，这两个文件都在目录/var/adm中。Solaris提供了很多函数（见getutx(3))用于读或写这两个文件。
+在FreeBSD 5.2.1、Linux 2.4.22和Mac OS X 10.3中，登录记录的格式请参见手册页utmp(5)。这两个文件的路径名是/var/run/utnp和/var/log/wtmp。
+
+6.9系统标识
+POSIX.1定义了uname函数，它返回与当前主机和操作系统有关的信息。
+#include <sys/utsname.h>
+int uname(struct utsname *name)；
+返回值：若成功则返回非负值，若出错则返回-1
+通过该函数的参数向其传递一个utsname结构的地址，然后该函数填写此结构。POSIX.1只定义了该结构中至少需提供的字段（它们都是字符数组)，而每个数组的长度则由实现确定。某些实现在该结构中提供了另外一些字段。
+---
+struct
+---
+每个字符串都以null字符结尾。本书讨论的四种平台支持的最大名字长度列于表6-6中。utsname结构中的信息通常可用uname(l)命令打印。
+POSIX.1警告nodename尤素可能并不适用于引用通信网络上的主机。此函数来自于系统V.在早期.nodename元素适用于引用UUCP网络上的主机„
+还要认识到在此结构中并没有给出有关POSIX.1版本的信息。应当使用2.6节中所说明的_POSIX_VERSION以获得该信息。
+是后，此函数给出了一种获取该结构中信息的方法，至于如何初始化这些信息，POSIX.1没有给出任何说明。
+历史上，BSD派生的系统提供了gethostname函数，它只返回主机名，该名字通常就是TCP/IP网络上主机的名字。
+
+#include <umstd.h>  
+int gethostname (char *name, int namelen)；  
+返回值：若成功则返回0，若出错则返回-1
+namelen参数指定name缓冲区长度，如若提供足够的空间，则通过name返回的字符串以null结尾。如若没有提供足够的空间，则没有指定通返回的字符串是否以null结尾。
+现在，gethostname函数已定义为POSIX.1的一部分，它指定最大主机名长度是HOST_NAME_MAX。表6-6中列出了本书讨论的四种实现支持的最大名字长度。
+
+表6-6系统标识名字限制
+---
+接口  最大名字长度
+    FreeBSD 5.2.1   Linux 2.4.22    Mac OS X 10.3   Solaris 9
+uname   256 65  256 257
+gethostname 256 M   256 256
+---
+如果将主机连接到TCP/IP网络中，则此主机名通常是该主机的完全限定域名。
+hostname(1)命令可用来获取和设置主机名。（超级用户用一个类似的函数sethostname来设置主机名。）主机名通常在系统自举时设置，它由/etc/rc或init取自一个启动文件。
+
+6.10时间和日期例程
+由UNIX内核提供的基本时间服务是计算自国际标准时间公元19TO年1月1日00:00:00以来经过的秒数。1.10节中曾提及这种秒数是以数据类型1：1：^_1：表示的。我们称它们为日历时间。日历时间包括时间和日期。UNIX在这方面与其他操作系统的区别是：（a)以国际标准时间而非本地时间计时，（b)可自动进行转换，例如变换到夏时制，（c)将时间和日期作为一个量值保存。time函数返回当前时间和日期。
+
+#include <time.h>   
+time_t time (time_t *calptr);   
+返回值：若成功则返回时间值，若出错则返回-1
+时间值总是作为函数值返回。如果参数不为空，则时间值也存放在由ca/pfr指向的单元内。
+在系统V派生的系统中，调用stime(2)函数，在BSD派生的系统中，則调用settimeofday(2).用于对内核中的当前时间设置初始值。
+Single UNIX Specification没有说明系统如何设置其当前时间。
+与time函数相比，gettimeofday提供了更高的分辨率（最高为微秒级）。这对某些应用很重要。
+---
+#include <sys/time.h>   
+int gettimeofday(struct timeval ★restrict tp, void *restrict tzp)；
+返回值：总是返回0
+
+该函数作为XSI扩展定义在Single UNIX Specification中，fzp的唯一合法值是NULL,其他
+值则将产生不确定的结果。某些平台支持用fzp说明时区，但这完全依实现而定，并不由Single
+UNIX Specification定义。
+gettimeofday函数将当前时间存放在rp指向的timeval结构中，而该结构存储秒和微秒。
+
+struct timeval {
+time一仁 tv一sec; /* seconds */ long tv一usee; /* microseconds */
+}；
+
+一旦取得这种以秒计的整型时间值后，通常要调用另一个时间函数将其转换为人们可读的 时间和日期。图说明了各种时间函数之间的关系。（图中以虚线表示的四个函数localtime、 mktime、ctime和strftime都受到环境变量TZ的影响。我们将在本节后面对其进行说明。）
+
+图6-1各个时间函数之间的关系
+---
+各个时间函数之间的关系
+---
+
+两个函数localtime和gmtime将日历时间转换成以年、月、日、的时间，并将这些存放在一个tm结构中。
+---
+struct
+a broken-down time */
+seconds after the minute： [0 - 60] */
+minutes after the hour： [0  - 59] */
+hours after midnight： [0 -  23] ★/
+day of the month： [1 - 31]  */
+months since January： [0 -  11] */
+years since 1900 */
+days since Sunday： [0 - 6]  */
+days since January 1: [0 -  365] */
+daylight saving time flag：  <0, 0, >0 *
+struct  tm {
+int     sec；
+int tm_ rnin；
+int tm  hour ；
+int tm_mday；
+int     _mon；
+int     year;
+int tm 一 wday；
+int tm一yday；
+int tm  isdst
+---
+秒可以超过59的理由是可以表示润秒。注意，除了月日字段，其他字段的值都以0开始。如果夏时制生效，则夏时制标志值为正，如果为非夏时制时间，则该标志值为0,如果此信息不可用，则其值为负。
+Single UNIX Specification以前的版木允许双润秒，于是，tm_sec值的有效范围是0~61。UTC的正式定义不允许双润秒，所以，现在tm_sec值的有效范围定义为0~60。
+---
+#include <time.h>   
+struct tm * gmtime (const time—t *calptr)；  
+struct tm *localtime (const time_t *calplr)；    
+---
+两个函数返回值：指向tm结构的指针
+localtime和gmtime之间的区别是：localtime将日历时间转换成本地时间（考虑到本地时区和戛时制标志），而gmtime则将日历时间转换成国际标准时间的年、月、日、时、分、秒、周日。
+函数mktime以本地时间的年、月、日等作为参数，将其转换成time_t值。
+
+#include <time.h>
+time_t mktime (struct tm *tmptr)；
+返回值：若成功则返回日历时间，若出错则返回-1
+asctime和ctime函数产生大家都熟悉的26字节的字符串，这与date(l)命令的系统默认输出形式类似，例如：
+Tue Feb 10 18:27:38 2004\n\0
+#include <time.h>   
+char *asctime (const struct tm * tmptr);
+char *ctime(const time—t *calptr);
+两个函数返回值：指向以mill结尾的字符串的指针
+asctime的参数是指向年、月、日等字符串的指针，而ctime的参数则是指向日历时间的指针。最后一个时间函数是strftime,它是非常复杂的类似于printf的时间值函数。
+
+#include <time.h>
+size_t strftime (char * restrict buf, size_t maxsize, const char *restrict format, const struct tm * restrict tmptr)；
+返回值：若有空间则返回存入数组的字符数，否则返回0
+最后一个参数是要格式化的时间值，由一个指向tm结构的指针指定。格式化结果存放在一个长度为maxsize个字符的buf数组中，如果buf长度足以存放格式化结果及一个null终止符，则该函数返回在buf存放的字符数（不包括null终止符），否则该函数返回0。
+format参数控制时间值的格式。如同printf函数一样，转换说明的形式是百分号之后跟一个特定字符。format中的其他字符则按原样输出。两个连续的百分号在输出中产生一个百分号。与printf函数不同的是，每个转换说明产生一个不同的定长输出字符串，在/bmwr字符串中没有字段宽度修饰符。表6-7中列出了37种ISO C规定的转换说明。表中第三列的数据来自于在Linux中执行strftime函数所得的结果，它对应的时间和日期是：Tue Feb 10 18:27:38 EST 2004。
+
+表6-7 strftime的转换说明
+---
+格式  说 明 实例
+%a  缩写的周曰名  Tue
+%A  全周日名    Tuesday
+%b  缩写的月名   Feb
+%B  全月名 February
+%c  曰期和时间   Tue Feb 10 18:27:38 2004
+%C  年/100: [00 〜99] 20
+%d  月日：[01-31]  10
+%D  日期[MM/DD/YY]    02/10/04
+%e  月曰（一位数前加空格)：[1〜31]  10
+%F  ISO 8601 曰期格式[YYYY-MM-DD]   2004-02-10
+%g  ISO 8601基于周的年的最后2位数[00^99]  04
+%G  ISO 8601基于周的年   2004
+%h  与％1)相同  Feb
+%H  小时（24时制）：[00〜23]    18
+%I  小时（12时制）：[01〜12]    06
+%j  年曰：[00卜366] 041
+%m  月：[01 〜12]  02
+%M  分:[00 〜59]  27
+%n  换行符 
+%P  AM/PM   PM
+%r  本地时间：U2时制）  06:27:38 PM
+%R  与相同 18:27
+%S  秒：[00 〜60]  38
+%t  水平制表符   
+%T  与 相同    18:27:38
+%u  ISO 8601 周日[Monday=l, 1-7]  2
+%U  星期日周数：[00〜53]   06
+%V  ISO 8601 周数：[01 〜53]    07
+%w  周日：[0=Sunday，06]    2
+%W  星期一周数：[00〜53]   06
+%x  日期  02/10/04
+%x  时间  18:27:38
+%y  年的最后两位数：[00〜99] 04
+%Y  年   2004
+%z  ISO 8601格式的UTC偏移量   -0500
+%Z  时区名 EST
+%%  转换为1个％  %
+---
+表6-7中的大多数格式说明的意义很明显。需要略作解释的是%U、%V、和%W、%U是相应日期在该年中所属周数，包含该年中第一个星期日的周是第一周。％〜也是相应日期在该年中所属的周数，不同的是包含第一个星期一的周为第一周。说明符则与上述两者有较大区别。若某周包含了1月1日，而且至少包含了其后的另外3天，那么该周是一年中的第一周，否则该周被认为是上一年的最后一周。在这两种情况下，周一都被视作每周的第一天。
+ 
+如同printf,strftime对某些转换说明支持修饰符。可以使用E和0修饰符产生本地支持的另一种格式。
+某些系统对strftime的格式字符串提供另外一些非标准的扩充支持。
+我们曾在前面提及，图6-1中以虚线表示的四个函数受到环境变量TZ的影响。这四个函数是：localtime、mktime,ctime和strftime。如果定义了TZ，则这些函数将使用其值以代替系统默认时区。如果TZ定义为空串（即TZ=)，则使用国际标准时间UTC。TZ的值常常类似干：TZ=EST5EDT,但是POSIX.1允许更详细的说明。有关TZ变量的详细情况，请参阅Single UNIX Specification[Open Group 2OO4]中的环境变量章节。
+除gettimeofday函数外，本节所述的其他所有时间和日期函数都是由ISO C标准定义的，在此基础上，POSIX.I增加了环境变量TZe在FreeBSD 5.2.1、Linux 2.4.22和Mac OS X 10.3中，关于TZ变量的更多信息可参见手册页tzset(3),在Solaris9中，可参见手册页environ(5),
+
+6.11小结
+所有UNIX系统都使用口令文件和组文件。我们说明了读这些文件的各种函数。本章也介绍了阴影口令，它可以增加系统的安全性。附加组ID提供了一个用户同时可以参加多个组的方法。我们还介绍了大多数系统所提供的存取其他与系统有关数据文件的类似函数。我们讨论了iizJ几个系统标识函数，应用程序使用它们以标识它在何种系统上运行。最后，说明了iso c和Single UNIX Specification提供的与时间和日期有关的一些函数。
+
+习题
+6.1如果系统使用阴影文件，那么如何取得加密口令？
+6.2假设你有超级用户权限，并且系统使用了阴影口令，重新考虑上一道习题。
+6.3编写一个程序，它调用uname并输出utsname结构中的所有字段，将该输出与uname(1)命令的输出结果作比较。
+6.4计算可由time_t数据类型表示的最迟时间。如果超出了这一时间将会如何？
+6.5编写一个程序，获取当前时间，并使用strftime将输出结果转换为类似干date(1)命令的默认输出。将环境变量TZ设置为不同的值，观察输出结果。
+ 

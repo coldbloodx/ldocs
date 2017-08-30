@@ -1,0 +1,1092 @@
+第18章
+终端I/O
+18.1引言
+所有操作系统的终端IA3处理都是非常繁琐的，UNIX也不例外。在大多数版本的UNIX手册 中，终端I/O手册页常常是最长的部分。
+20世纪70年代后期，UNIX系统m开发了与传统的V7不同的一组终端例程，从而形成了 UNIX终端I/O处理的两种不同风格，系统m的风格一直延续至系统V, V7的风格则成为BSD类 系统的标准风格。POSIX.1在这两种风格的基础上制定了终端I/O标准。本章将介绍POSIX.1的 终端函数，以及某些平台特有的增加部分。
+终端I/O的用途很广泛，包括用于终端、计算机之间的直接连线、调制解调器以及打印机等 等，所以终端I/O系统非常复杂。
+18.2综述
+终端i/o有两种不同的工作模式：
+(1)	规范模式输入处理(Canonical	mode input processing)„在这种模式中，终端输入以行 为单位进行处理。对于每个读要求，终端驱动程序最多返回一行。
+(2)	非规范模式输入处理(Noncanonica】	mode input processing)。输入字符并不组成行。 如果不作特殊处理，则默认模式是规范模式。例如，若shell把标准输入重定向到终端，在
+用read和write将标准输入复制到标准输出时，终端以规范模式进行工作，每次read最多返 回一行。操纵整个屏幕的程序(例如vi编辑程序)使闬非规范模式，原因是它的命令是由一个 或几个字符组成的，并且不以换行符终止。另外，该编辑程序使用了若干特殊字符作为编辑命 令，所以它也不希望系统对特殊字符进行处理。例如，Ctrl+D字符通常是终端的文件结束符， 但在vi中它是向下滚动半个屏幕的命令。
+V7和较早BSD风格类的终端驱动程序支持三种终端输入模式：(a)精细加工模式(输入组成行， 并对特殊字符进行处理)；(b)原始模式(输入不组成行，也不对特殊字符进行处理)；(c)cbreak樣式 (输入不组成行，但对茱些特殊字符进行处理)。程序清单18-10显示了将终端设置为cbreak或原始模式 的POS1X.1函數。
+POSIX.1定义了 11个特殊输入字符，其中9个可以改变。本书已经用到了其中几个，例如文 件结束符(通常是Ctrl+D)、挂起字符(通常是Ctrl+Z)。18.3节将对其中每个字符进行说明。
+终端设备是由一般位于内核中的终端驱动程序控制的。每个终端设备有一个输入队列和一 个输出队列，如图18-1所示。
+岡
+
+ 
+508 第18章终端I/O
+input flags */ output flags */ control flags */ local flags */ control characters */
+struct termios { tcflag_t c_iflag; tcflag—t c一oflag; tcflag一t c—cflag; tcflag_t c_lflag； cc_t	c_cc[NCCS]
+粗略而言，输入标志由终端设备驱动程序用来控制字符的输入(剥除输入字节的第8位，允许 输入奇偶校验等等)，输出标志则控制驱动程序输出(执行输出处理、将换行符映射为CR/LF等),
+
+进程写的下一个字符
+进程读的下一个字符
+画
+输出队列
+若回送字符
+输入队列
+INPUT ■
+传送给设备的下一个字符	设备读的下一个字符
+图18-1终端设备的输入、输出队列逻辑结构
+对此图要说明下列几点：
+•如果打开了回显功能，则在输入队列和输出队列之间有一个隐含的连接。
+•输入队列的长度MAX_INPUT (见表2-11)是有限值，当一个特定设备的输入队列已经 填满时，系统对此作何种处理依赖于实现。大多数UNIX系统的处理方式是回显响铃 字符。
+•图中没有显示另一个输入限制MAX_CAN0N,它是在一个规范输入行中的最大字节数。
+用户进程
+國
+•虽然输出队列通常也是有限长度，但是程序并不能获得这
+个定义其长度的常量，这是因为当输出队列将要填满时，内
+核使写进程休眠直至写队列中有可用的空间，所以程序无需
+关心该队列的长度。
+•我们将说明如何使用tcflush函数刷清(flush)输入或输
+出队列。与此类似，在说明tcsetattr函数时，我们将会
+了解到如何通知系统只有在输出队列为空时才改变一个终端；	；内核
+设备的属性。(例如，想要改变输出属性时就要这样做。)
+我们也能通知系统，当它正在改变终端属性时，要丢弃在输
+入队列中的一切东西。(如果正在改变输入属性，或者在规
+范和非规范模式之间进行转换，则可能希望这样做，以免以
+错误的模式对以前输入的字符进行解释。)
+大多数UNIX系统在一个称为终端行规程(terminal line
+discipline)的模块中进行规范处理。它是位于内核通用读、写函
+数和实际设备驱动程序之间的模块(见图18-2)。
+注意，此图与关于流模块的图14-5非常类似。在第19章讨论伪终端时还将使用此图。
+所有我们可以检测和更改的终端设备特性都包含在termios结构中。该结构定义在头文件 ctermios.h:^，本章经常使用这一头文件。
+ 
+实际设备 图18-2终端行规程
+/*
+/*
+/*
+/*
+/*
+ 
+18.2 综 述 509
+控制标志影响到RS-232串行线(忽略调制解调器的状态线、每个字符的一个或两个停止位等等), 本地标志影响驱动程序和用户之间的接口(回送的开或关、可视的擦除字符、终端产生的信号 的启用以及对后台输出的作业控制停止信号等)。
+类型长度足以保存每个标志值。它经常被定义为unsigned int或者 unsigned long。c_cc数组包含了所有可以更改的特殊字符。NCCS是该数组的长度，一般 介于15到20之间(大多数UNIX系统支持的特殊字符较POSIX所定义的11个要多)。cc_t类型的 长度足以保存每个特殊字符，而且它往往是unsigned char型的。
+POSIX标准之前的系统V版本有一个名*<termio-h>的头文件、一个名为termio的数据结构。
+为了 S别于这些老名字，POSIX.I在新名字后加了一个s。
+表18-1至表18-4列出了所有可以进行更改以影响终端设备特性的终端标志。注意，虽然 Single UNIX Specification定义了所有平台都支持的公共子集，但是各平台还有自己的扩充部分。 这些扩充部分与系统各自不同的历史发展过程有关。18.5节将详细讨论这些标志值。
+表18-1 c_cflag终端标志
+标 志	说明	POSIX 1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+CBAUDEXT	扩充的波特率					•
+CCAR 一 OFLOW	输出的DCD流控制					
+CCTS一 OFLOW	输出的CTS流控制					•
+CDSR_OFLOW	输出的DSR流控制					
+CDTR_IFLOW	输出的DTR流控制					
+CIBAUDEXT	扩充输入波特率					•
+CIGNORE		忽略控制标志					
+CLOCAL		忽略调制解调器状态行	•		•		
+CREAD		启用接收装置	•		•		
+CRTSCTS		启用硬件流控制			•		
+CRTS_IFLOW	输入的RTS流控制					
+CRTSXOFF	启用输人硬件流控制					
+CSIZE		字符大小屏蔽	•		•		
+CSTOPB		送两个停止位，否则为1位	•		•		
+HUPCL		最后关闭时断开	.		•		
+MDMBUF		与 CCAR_OFLOW 相同					
+PARENB		进行奇偶校验	•		•		
+PAREXT		标记或空奇偶性					
+PARODD		奇校验，否则为偶校验	•		•	•	
+		* 表 18-2	c—if lag终端标志	
+志	说明	POS1X.1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+BRKINT	接到BREAK时产生SIGINT					
+ICRNL	将输入的CR转换为N L					
+IGNBRK	忽略BREAK条件					
+IGNCR	忽略CR					
+IGNPAR	忽略奇偶错字符					
+
+ 
+510 第18幸终端I/O
+(续)
+标 志	说明	POSIX.1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+IMAXBEL	在输入队列满时振铃		•	參	•	•
+INLCR	将输入的NL转换为CR	•	參	•	•	•
+INPCK	打开输入奇偶校验	•	•	•	•	•
+ISTRIP	剝除输入字符的第8位	•	•	•	參	•
+IUCLC
+IXANY	将输入的大写字符转换成小写字符 使任一字符都重新启动输出	XSI	•	•
+參	•	«
+•
+IX0FF	使启动/停止输入控制流起作用	•	•	•	•	•
+IX0N	使启动/停止输出控制流起作用	•	•	•	•	•
+PARMRK	标记奇偶错	•	•	•	•	•
+表18-3 c_lflag终端标志
+标 志	说明	POSIX.1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+ALTWERASE	使用替换WERASE算法		•		•	
+ECHO	进行回送	•	•	•	參	•
+ECH0CTL	回送控制字符为A (Char)		•	•	參	•
+ECH0E	可见擦除符	•	•	•	•	•
+ECH0K	回送kill符	•	•	•	•	*
+ECH0KE	kill的可见擦除		•	參	•	•
+ECH0NL	回送NL	«	•	•	•	•
+ECH0PRT	硬拷贝的可见擦除方式		•	•	•	•
+EXTPROC	外部字符处理		•		•	
+FLUSH0	刷清输出		•	•	•	•
+ICANON	规范输入	•	•	•	•	•
+IEXTEN	启用扩充的输入字符处理	•	參	參	•	•
+ISIG	启用终端产生的信号	•	參	•	•	•
+NOFLSH •	在中断或退出键后禁用刷清	•	•	•	•	•
+N0KERNINF0	由STATUS无内核输出		•		參	
+PENDIN	重新打印未决输入		•	•	•	•
+T0ST0P	对于后台输出发送SIGTT0U	«	•	•	•	•
+XCASE	规范的大/小写表示			•		•
+表18-4 c_oflag终端标志
+标志	说明	POSIX.1	FreeBSD
+5.2.1	Linux « 2.4.22	Mac OS X 10.3	Solaris
+9
+BSDLY	退格延迟屏蔽	XSI		•		•
+CMSPAR	标记或空奇偶性			•		
+CRDLY	CR延迟屏蔽	XSI		•		•
+FFDLY	换页延迟屏蔽	XSI		•		•
+NLDLY	NL延迟屏蔽	XSI		•		•
+0CRNL	将输出的CR转换为NL	XSI	•	•		•
+0FDEL	填充符为DEL，否则为NUL	XSI		•		•
+0FILL	对于延迟使用填充符	XSI		•		•
+
+ 
+18.2 综 述 511
+(续)
+标 志	说明	POSIX 1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+OLCUC	将输出的小写字符转换为大写字符			•		•
+ONLCR	将NL转换为CR-NL	XSI		•	•	•
+ONLRET	NL执行CR功能	XSI		•		參
+ONOCR	在0列不输出CR	XSI		•		•
+ONOEOT	在输出中删除EOTpD)字符				•	
+OPOST	执行输出处理	•-		•	•	•
+OXTABS	将制表符扩充为空格				•	
+TABDLY	水平制表符延迟屏蔽	XSI		•		•
+VTDLY	垂直制表符延迟屏蔽	XSI		•		•
+给出了所有可用的选项后，如何才能检测和更改终端设备的这些特性呢？表18-5列出了 Single UNIX Specification所定义的对终端设备进行操作的各个函数。(除tcgetsid是Single UNIX Specification的XSI扩展外，列出的其他函数都是POSIX规范的基本部分。9.7节已说明了 tcgetpgrp、tcgetsid和tcsetpgrp函数。)
+表18-5终端I/O函数摘要
+函数	说明
+tcgetattr	取属性(termios结构)
+tcsetattr	设置属性(termios结构)
+cfgecispeed	得到输入速度
+cfgetospeed	得到输出速度
+cfsetispeed	设置输人速度
+cfsetospeed	设罝输出速度
+tcdrain	等待所有输出都被传输
+tcflow	挂起传输或接收
+tcflush	刷清未决输入和/或输出
+tcsendbreak	送BREAK字符
+tcgetpgrp	得到前台进程组ID
+tcsetpgrp	设罝前台进程组ID
+tcgetsid	得到控制TTY的会话首进程的进程组ID (XSI扩展)
+注意，对终端设备，Single UNIX Specification没有使用经典的ioctl,而使用了表18-5中 列出的13个函数。这样做的理由是：对于终端设备的ioctl函数，其最后一个参数的数据类型 随执行动作的不同而不同。于是，这使得对参数进行类型检查成为不可能。 虽然对终端设备进行操作只有13个函数，但是表18-5中头两个函数(tcgetattr和 tcsetattr)能处理大约70种不同的标志(见表18-1至表18-4)。对于终端设备有大量选项可 供使用，此外，对于一个特定设备(终端、调制解调器、激光打印机等等)还要决定所需的选 项，这些都使对终端设备的处理变得异常复杂。 表18-5中列出的13个函数之间的关系示于图18-3中。
+POSIX.I没有规定在termios结构中何处存放波特率信息，那是具体实现的细节。某些系统(例如 Linux和Solaris)将此信息存放在0_匚£139字段中。BSD派生的系统(例如FreeBSD和Mac OS X)则在 此结构中有两个分开的字段：一个存放输入速度，另一个则存放输出速度。
+
+ 
+512 第18章终端I/O
+struct
+termios
+输入波特率|输出波特率
+行控制函数
+前台进程组ID
+634
+I
+637
+18.3特殊输入字符
+POSIX.1定义了 11个在输入时作特殊处理的字符。实现定义了另外一些特殊字符。表18-6 摘要列出了这些特殊字符。
+表18-6终端特殊输入字符
+字符	说明	下标	由…
+字段	…启用
+标志	典型值	POSIX.1	FreeBSD Linux Mac OS X Solaris 5.2.1 2.4.22 10.3 9
+CR	回车	(不能更改)	c_lflag	ICANON	V	•	• • •	•
+DISCARD	擦除输出	VDISCARD	c_lflag	IEXTEN	Ao		♦ • •	•
+DSUSP	延迟挂起(SIGTSTP)	VDSUSP	c_lflag	ISIG	ay		• •	•
+EOF	文件结束	VE0F	c一Iflag	ICANON	AD	•	• • •	
+EOL	行结束	VE0L	c_lflag	ICANON		•	• • •	•
+EOL2	供替换的行结束	VE0L2	c一Iflag	ICANON			• • •	•
+ERASE	向前擦除一个字符	VERASE	c_lflag	ICANON	AH,A?	•	• • •	•
+ERASE2	供替换的向前擦除字符	VERASE2	c一Iflag	ICANON	AH，A?			
+INTR	中断信号(SIGINT)	VINTR	c一Iflag	ISIG	A?，AC	•	• • •	•
+KILL	擦行	VKILL	c—Iflag	ICANON	AU	•	• • •	•
+LNEXT	下一个字面字符	VLNEXT	c—Iflag	IEXTEN	AV		• • •	•
+NL	换行	(不能更改)	c」f lag	ICANON	\n	•	• • •	•
+QUIT	退出信号(SIGQUIT)	VQUIT	c_lflag	ISIG	A\	•	• • •	a
+REPRINT	再打印全部输入	VREPRINT	c_lflag	ICANON	AR		• • •	•
+START	恢复输出	VSTART	c一iflag	IXON/IXOFF	AQ		• • •	•
+STATUS	状态请求	VSTATUS	c_lflag	ICANON	AT		• •	
+STOP	停止输出	VST0P	c_iflag	IXON/IXOFF	AS	•	• • •	•
+SUSP	挂起信号(SIGTSTP)	VSUSP	c—Iflag	ISIG	八z	勢	• • •	•
+WERASE	擦除一个字	VWERASE	c一Iflag	ICANON	AW		• • •	•
+在P0SIX.1的11个特殊字符中，可将其中9个更改为几乎任何值。不能更改的两个特殊字符
+终端行规程/终端设备驱动程序
+图18-3与终端有关的函数之间的关系
+•O-Hsws 叻0:1
+MOHM-IU4J
+nsnHgo:!
+U-Hspo+J
+3{n5a}:IC{pua)nu+J
+5psa)?:J
+M4J4J30S4J
+pa)a)04sopa)lr»gu
+T3a)s<ISOPSS 叫u
+pa)a)04SJWa)lr»gu
+pa)a)04SJ+Ja)sgu
+
+ 
+18.3特殊输入字符 513
+是换行符和回车符(\11和\4，有些实现也不允许更改STOP和START字符。为了进行修改，
+只要更改termios结构中c_cc数组的相应项。该数组中的兀素都用名字作为下fe进行引用’
+每个名字都以字母V开头(见表18-6中的第3列)。
+POSIX.1允许禁用这些字符。若将c_cc数组中的某项设置为_POSIX_VDISABLE的值，则
+禁用相应的特殊字符。
+Single UNIX Specification的早期版本中，支持_POSIX_VDISABLE是作为可选项的。现在则是作为
+要求项。
+本书讨论的四种平台都支持此特性。Linux 2.4.22和Solaris 9将—POSIX_VDISABLE定义为0,而
+FreeBSD 5.2.1 和Mac OS X 10.3则将其定义为 Oxff。
+某些早期的UNIX系统所用的方法是：若相应的特殊繚入字符是0.别禁用该字符„
+实例
+在详细说明各特殊字符之前，先看一个更改特殊字符的程序。程序清单18-1禁用中断字符，
+并将文件结束符设置为Ctrl+B。
+程序清单18-1禁用中断字符和更改文件结束字符
+#include "apue.h"
+#include <termios•h>
+int
+main (void)
+{
+struct termios term;
+long	vdisable；
+if (isatty(STDIN 一FILENO) == 0)
+err_quit("standard input is not a terminal device");
+if ((vdisable = fpathconf(STDIN_FILENOf 一PC一 VDISABLE)) < 0)
+err quit ("fpathconf error or _POS I X_VD I SABLE not in effect11)；
+if (tcgetattr(STDIN FILENO, &term) < 0) /* fetch tty state */
+err—sys("tcgetattr error")；
+term.c_cc[VINTR] = vdisable； /* disable INTR character */
+term.c_cc[VEOF] = 2；	/* EOF is Control-B */
+if (tcsetattr(STDIN_FILENO# TCSAFLUSH, &term) < 0)
+err一sys("tcsetattr error")；
+exit(0)；
+对此程序要说明下列几点：
+•仅当标准输入是终端设备时才修改终端特殊字符。调用isatty (见18.9节)对此进行检测。
+•用 fpathconf取_POSIX_VDISABLE 值。
+•函数tcgetattr (见18.4节)从内核取termios结构。在修改了此结构后，调用 tcsetattr函数设置属性，这样就可进行我们所希望的修改，而其他属性则保持不变。
+•禁用中断键与忽略中断信号是不同的。程序清单18-1所做的是禁止使用使终端驱动程序
+[638]
+
+ 
+514 第18章终端I/O
+产生SIGINT信号的特殊字符。但仍可使用kill函数向进程发送该信号。	口
+下面较详细地说明各个特殊字符。我们称这些字符为特殊输入字符，但是其中STOP和 START (Ctrl+S和Ctrl+Q)两个字符在输出时也对它们进行特殊处理。注意，这些字符中的大 多数在被终端驱动程序识别并进行特殊处理后都被丢弃，并不将它们传送给执行读终端操作的 进程。例外的字符是换行符(NL, EOL, E0L2)和回车符(CR)。
+CR	回车符。不能更改此字符。以规范模式进行输入时识别此字符。当设置了
+I CANON (规范模式)和ICRNL (将CR映射为NL)以及没有设置IGNCR (忽 略CR)时，将CR转换成NL,并产生与NL符相同的作用。
+此字符返回给读进程(多半是在转换成NL后)。
+DISCARD删除符。在扩充模式下(IEXTEN)，在输入中识别此字符。在输入另一个 DISCARD符之前或删除条件被清除之前(见FLUSHO选项)，此字符使后续输 出都被删除。在处理后此字符即被刪除，不送向读进程。
+DSUSP 延迟-挂起作业控制字符(delayed-suspend job-control character)。在扩充方式 下，若支持作业控制并且ISIG标志被设置，则在输入中识别此字符。与SUSP 宇符的相同处是：延迟-挂起宇符产生SIGTSTP信号，它被送至前台进程組中 的所有进程(参见图9-7)。但是延迟-挂起字符产生信号的时间并不是在键入 此字符时，而是在一个进程读控制终端读到此字符时。在处理后，此字符即被 删除，不送向读进程。
+EOF	文件结束符。以规范模式(ICANON)进行输入时识别此字符。当键入此字符
+时，等待被读的所有字节都立即传送给读进程。如果没有字节等待读，则返回 0。在行首输入一个EOF符是向程序指示文件结束的正常方式。在以规范模式 处理后，此字符即被删除，不送向读进程。
+EOL	附加的行定界符，与NL作用相同。以规范模式(ICANON)进行输入时识别此
+字符，并将此字符返回给读进程。但通常不使用此字符。
+EOL2 另一个行定界符，与NL作用相同。对此字符的处理方式与EOL字符相同。
+ERASE 擦除字符(退格)。以规范模式(ICANON)输入时识别此字符。它擦除行中 的前一个字符，但不会超越行首字符擦除上一行中的字符。在以规范模式处理 后此字符即被删除，不送向读进程。
+ERASE2 另一个擦除字符(退格)。对此字符的处理与ERASE完全相同。
+INTR 中断字符。若设置了ISIG标志，则在输入中识别此字符。它产生SIGINT信 号，该信号被送至前台进程組中的所有进程(参见图9-7)。在处理后，此字符 即被删除，不送向读进程。
+kill kill (杀死)字符。(名字“杀死”在这里又一次被误用，回忆kill函数，它 将一信号发送给进程。此字符应被称为行擦除符，它与信号毫无关系。)以规 范模式(ICANON)输入时识别此字符。它擦除一整行。在处理后，此字符即 被刪除，不送向读进程。
+LNEXT “字面上的下一个”宇符(literal-next character)。以扩充方式(IEXTEN)输 入时识別此字符，它使下一个字符的任何特殊含义都被忽略。这对本节提及的 所有特殊字符都起作用。使用这一字符可向程序键入任何字符。在处理后， LNEXT字符即被删除，但输入的下一个字符则被传送给读进程。
+
+ 
+18.3特殊输入字符 515
+NL	新行字符，它也被称为行定界符。不能更改此字符。以规范模式(ICANON)
+输入时识别此字符。此字符返回给读进程^
+QUIT 退出字符。若设置了ISIG标志，则在输入中识别此字符。它产生SIGQUIT信 号，该信号又被送至前台进程組中的所有进程(参见图9-7)。在处理后，此字 符即被刪除，不送向读进程。
+回忆表10-1, INTR和QUIT的区别是：QUIT字符不仅按默认终止进程，而且也
+产生core文件。
+REPRINT再打印字符。以扩充规范模式(设置了IEXTEN和ICANON标志)进行输入时 识别此字符。它使所有未读的输入被输出(再回显)。在处理后，此字符即被 删除，不送向读进程。
+START 启动字符。若垛置了IXON标志则在输入中识别此字符，若设置IXOFF标志， 则作为输出自动产生此字符。在IXON已设置时接收到的START字符使停止的 输出(由以前输入的STOP字符造成)重新启动。在此情形下，此字符处理后 即被刪除，不送向读进程。
+在IXOFF标志设置时，若输入不会使输入缓冲区溢出，则终端驱动程序自动地 产生一 START字符以恢复以前被停止的输入。
+STATUS BSD的状态-请求字符。以扩充规范模式(设置IEXTEN和ICANON标志)进 行输入时识别此字符。它产生SIGINFO信号，该信号又被送至前台进程組中 的所有进程(见图9-7)。另外，如果没有设置NOKERNINFO标志，则有关前 台进程組的状态信息也显示在终端上。在处理后，此字符即被删除，不送向 读进程。
+STOP 停止字符。若设置了IXON标志，则在输入中识别此字符，若IXOFF标志已设 置则作为输出自动产生此字符。在IXON已设置时接收到STOP字符则停止输出。 在此情形下，处理后删除此字符，不送向读进程。当输入一个START字符后， 停止的输出重新启动。
+在IX0FF设置时，终端驱动程序自动地产生一个STOP字符以防止输入缓冲区 溢出。
+SUSP 挂起作业控制字符。若支持作业控制并且ISIG标志已设置，则在输入中识别 此字符。它产生SIGTSTP信号，该信号又被送至前台进程組的所有进程(见 图9-7)。在处理后，此字符即被删除，不送向读进程。
+WERASE字擦除字符。以扩充规范模式(设置IEXTEN和ICANON标志)进行输入时识别 此字符。它擦除前一个字。首先，它向后跳过任一空白字符(空格或制表符)， 然后再向后越过前一记号，使光标处在前一个记号的第一个字符位置上。通常， 前一个记号在碰到一个空白字符时即终止。但是，可用设置ALTWERASE标志 来改变这一点。此标志使前一个记号在碰到第一个非字母、数字符时即终止。 在处理后，此字符即被删除，不送向读进程。
+需要为终端设备定义的另一个“字符”是BREAK。BREAK实际上并不是一个字符，而是 在异步串行数据传送时发生的一个条件。依赖于串行接口，可以有多种方式通知设备驱动程序 发生了 BREAK条件。
+
+ 
+516 第18章终端I/O
+大多数早期的串行终端有一个标记为BREAK的键，用它可以产生BREAK条件，这就使得很多人 认为BREAK就是一个字符。某些较新的终端键盘没有BREAK键。在PC上，BREAK键有其他的用途。 例如键入Ctrl+BREAK,可中断Windows命令解释器。
+对于异步串行数据传送，BREAK是一个0值的位序列，其持续时间长于要求发送一个字节 的时间。整个0值位序列被视为是一个BREAK。18.8节将说明如何用tcsendbreak函数发送一 [6421 个 BREAK。
+18.4获得和设置终端属性
+使用函数tcgetattr和tcsetattr可以获得或设置termios结构。这样也就可以检测和 修改各种终端选择标志和特殊字符，以使终端按我们所希望的方式进行操作。
+#include <termios.h>
+int tcgetattr (int filedes, struct termios *termptr)；
+int tcsetattr (int filedes, int optr const struct termios *termptr)；
+两个函数的返回值：若成功则返回0.若出错则返回-1
+这两个函数都有一个指向termios结构的指针作为其参数，它们返回当前终端的属性，或者设 »	置该终端的属性。因为这两个函数只对终端设备进行操作，所以若辦《/«并不引用一个终端设
+备则出错返回-1, errno设置为EN0TTY。
+tcsetattr的参数opr使我们可以指定在什么时候新的终端属性才起作用。opr可以指定为 下列常量中的一个：
+TCSAN0W 更改立即发生。
+TCSADRAIN发送了所有输出后更改才发生。若更改输出参数则应使用此选项。 TCSAFLUSH发送了所有输出后更改才发生。更进一步，在更改发生时未读的所有输入数 据都被删除(刷清)。
+tcsetattr函数的返回值易产生混淆。如果它执行了任意一种所要求的动作，即使未能 执行所有要求的动作，它也返回0 (表示成功)。如果该函数返回0，则我们有责任检査该函数 是否执行了所有要求的动作。这就意味着，在调用tcsetattr设置所希望的属性后，需调用 tcgetattr,然后将实际终端属性与所希望的属性相比较，以检测两者是否有区别。
+18.5终端选项标志
+本节对表18-1至表18-4中列出的各个终端选项标志按字母顺序作进一步说明，指出该选项 出现在四个终端标志字段中的哪一个(从选项名字中看不出它所处的字段)，并说明该选项是 否是Single UNIX Specification定义的，列出了支持该选项的平台。
+列出的所有选项标志(除展蔽标志外)都用一位或几位(设置或清除)表示，而屏蔽标志 贝_义多位，它们组合在一起，于是可以定义多个值。屏蔽标志有一个定义名，每个值也有一 _个名字。例如，为了设置字符长度，首先用字符长度屏蔽标志CSIZE将表示字符长度的位清0， 然后设置下列值之一 ：CS5、CS6、CS7或CS8。
+由Linux和Solaris支持的6个延迟值也有屏蔽标志：BSDLY、CRDLY、FFDLY、NLDLY.
+
+ 
+18.5终端选项标志 517
+TABDLY和VTDLY。欲了解每个延迟值的长度请参阅Solaris的termio(7I)手册页。如果指定了 一个延迟，则OFILL和OFDEL标志决定是驱动器进行实际延迟还是只是传输填充字符。
+程序清单18-2例示了怎样使用屏蔽标志取或设置一个值。
+程序清单 18-2 tcgetattr和tcsetattr实例
+#include Mapue.h"
+#include <termios.h>
+int
+main(void)
+{
+struct termios term；
+if (tcgetattr(STDIN 一FILENO, &term) < 0) err-sys("tcgetattr error”)；
+switch (term.c_cflag & CSIZE) { case CS5:
+printf("5 bits/byte\n"); break? case CS6:
+printf("6 bits/byte\n"); break; case CS7：
+printf("7 bits/byte\n")； break; case CS8:
+printf("8 bits/byte\n"); break; default：
+printf("unknown bits/byte\n");
+}
+term.c_cflag &= ~CSIZE;	/* zero out the bits */
+term.c__cflag |: CS8；	/* set 8 bits/byte */
+if (tcsetattr (STDIN__FILENO, TCSANOW, &term) < 0) err一sys("tcsetattr error");
+exit(0)；
+下面说明各选项标志： ALTWERASE (c_lflag, FreeBSD, Mac OS X)此标志设置时，若输入了WERASE字 符，则使用一个替换的字擦除算法。它不是向后移动到前一个空白字符为 止，而是向后移动到第一个非字母、非数字字符为止。 BRKINT	(c」flag, POSIX. 1, FreeBSD, Linux, Mac OS X，Solaris)若此标志 设置，而IGNBRK未设置，则在接到BREAK时，刷清输人、输出队列，并 产生一个SIGINT信号。如果此终端设备是一个控制终端，则将此信号送 给前台进程组各进程。
+如果IGNBRK和BRKINT都没有设置，但是设置了PARMRK,则BREAK被读 作为三个字节序列\377, \0和\0，如果PARMRK也没有设置，贝IjBREAK 被读作为单个字符\0。
+
+ 
+518 第18章终端I/O
+BSDLY
+CBAUDEXT
+CCAR 一OFLOW
+CCTS一OFLOW
+CDSR一OFLOW
+CDTR 一工FLOW
+CIBAUDEXT
+CIGNORE CLOCAL
+CMSPAR CRDLY CREAD CRTSCTS
+CRTS一工FLOW
+CRTSXOFF
+CSIZE
+CSTOPB
+ECHO
+(c一oflag, XSI, Linux, Solaris)退格延迟屏蔽，此屏蔽的值是BSO或BS1。 (c一cflag，Solaris)扩充的波特率。用于允许大于B38400的波特率。(18.7 节将讨论波特率。)
+(c一cflag，FreeBSD, Mac OS X)打开输出的硬件流控制，该输出使用 RS-232调制解调器载波信号(DCD,被称为数据-载波-检测)。这与早期
+的MDMBUF标志相同。
+(c-cflag, FreeBSD, Mac OS X，Solaris)使用Clear-To-Send (CTS) RS- 232信号进行输出硬件的流控制。
+(c一cflag，FreeBSD, Mac OS X)按Data-Set-Ready (DSR) RS-232 信号 进行输出流控制。
+(c一cflag，FreeBSD, Mac OS X)按Data-Terminal-Ready (DTR) RS-232 信号进行输入流控制。
+(c_cflag, Solaris)扩充的输入波特率，用于允许大于B38400的输入波 特率。(18.7节将讨论波特率。〉
+(c-cflag，FreeBSD, Mac OS X)忽略控制标志。
+(c一cflag，POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则忽略调制解调器状态线。这通常意味着该设备是直接连接的。若此标志 未设置，则打开一个终端设备常常会阻塞直到调制解调器回应呼叫并建立 连接。
+(c_oflag， Linux)选择标记或空奇偶校验。如果PARODD设置，则奇偶校 验位总是1 (标记奇偶校验)。否则奇偶校验位总是0 (空奇偶校验)。 (c_oflag, XSI, Linux, Solaris)回车延迟屏蔽。此屏蔽的值是CR0、 CR1、CR2和CR30
+(c_cflag, POSIX.1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则接收装置被启用，可以接收字符。
+(c_cflag, FreeBSD, Linux, Mac OS X，Solaris)其行为依赖于平台。 对于Solaris,如果设置则允许输出硬件流控制。在另外三个平台上，允许 输入、输出硬件流控制(等效于CCTS_OFLOWICRTS_IFLOW)。
+(c_cflag, FreeBSD, Mac OS X, Solaris)输入的Request-To-Send (RTS) 流控制。
+(c_cflag, Solaris)如果设置，允许输入硬件流控制，Request-To-Send RS-232信号状态控制了流控制。
+(c_cflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)此字段是 一个屏蔽标志，它指明发送和接收的每个字节的位数。此长度不包括可能 有的奇偶校验位。由此屏蔽标志定义的字段值是CS5、CS6、CS7和CS8, 分别表示每个字节包含5、6、7和8位。
+(c_cflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则使用两位作为停止位，否则只使用一位作为停止位。
+(c_lflag, POSIX. 1, FreeBSD, Linux, Mac OS X，Solaris)如若设置， 则将输入字符回显(回送)到终端设备。在规范模式和非规范模式下都可
+
+ 
+18.5终端选项标志 519
+ECHOCTL
+ECHOE
+ECHOK
+ECHOKE
+ECHONL
+ECHOPRT
+EXTPROC
+FFDLY
+FLUSHO
+HUPCL
+以回显字符。
+(c_lflag, FreeBSD, Linux, Mac OS X, Solaris),如若设置并且ECHO 也设置，则除ASCII TAB、ASCII NL、START和STOP字符外，其他ASCII 控制符(ASCII字符集中的0~037)都被回显为AX，其中，X是相应控制字 符代码值加8进制100所构成的字符。这就意味着ASCII Ctrl+A字符(8进 制1)被回显为乂。ASCII DELETE字符(8进制177)则回显为A?。如若此 标志未设置，则ASCII控制字符按其原样回显。如同ECHO标志，在规范模 式和非规范模式下此标志对控制字符回显都起作用。
+应当了解的是：某些系统回显EOF字符产生的作用有所不同，其原因是 EOF的典型值是Ctrl+D，而这是ASCII EOT字符，它可能使某些终端挂断。 请查看有关手册。
+(c_lflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置并 且工CANON也设置，则ERASE字符从显示中擦除当前行中的最后一个字符。 这通常是在终端驱动程序中写三个字符序列“退格-空格_退格”而实现的。 如若支持WERASE字符，则ECH0E用一个或若干个上述三字符序列擦除前
+一个字。
+如若支持ECHOPRT标志，则在ECHOPRT标志没有设置的情况下，再采取这 里所说明的对于ECH0E的动作。
+(c_lflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置 并且ICANON也设置，则KILL字符从显示中擦除当前行，或者输出NL字符 (用以强调已擦除整个行)。
+如若支持ECH0KE标志，则这里的说明假定ECHOKE标志没有设置。
+(c_lflag, FreeBSD, Linux, Mac OS X，Solaris)如若设置并且ICANON 也设置，则回显KILL字符的方式是擦去行中的每一个字符。擦除每个字符 的方法则由ECH0E和ECHOPRT标志选择。
+(c_lf lag, POSIX.1, FreeBSD, Linux, Mac OS X，Solaris)如若设置 并且工CANON也设置，即使没有设置ECHO也回显NL字符。
+(c_l flag, FreeBSD, Linux, Mac OS X, Solaris)如若设置并且 I CANON和ECHO也都设置，则ERASE字符(以及WERASE字符，若受到支 持)使所有正被擦除的字符按它们被擦除的方式打印。在硬拷贝终端上这 常常是有用的，这样可以确切地看到哪些字符正被删除。
+(c_lflag, FreeBSD, Mac OS X)如若设置，规范字符处理在操作系统 之外执行。如果串行通信外设卡执行某些行规程处理从而减轻主机处理器 负载，或者使用伪终端(见第19章)，那么就可作这种设置。
+(c_oflag, XSI, Linux, Solaris)换页延迟屏蔽。此屏蔽标志值是FF0或 FF10
+(c_lflag, FreeBSD, Linux, Mac OS X，Solaris)如若设置，则刷清输 出。当键入DISCARD字符时设置此标志，当键入另一个DISCARD字符时, 此标志被清除。设置或清除此终端标志也可设置或清除此条件。
+(c_cflag, POSIX.1, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+
+ 
+520 第18章终端I/O
+16471
+[648]
+则当最后一个进程关闭此设备时，调制解调器控制线降至低电平(也就是 调制解调器的连接断开)。
+I CANON	(c_lf lag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+则按规范模式工作(见18.10节)。这使下列字符起作用：EOF、EOL、EOL2、 ERASE、KILL, REPRINT、STATUS和WERASE。输入字符被装配成行。 如果不以规范模式工作，则读请求直接从输入队列取字符。在至少接到 MIN个字节或已超过TIME值之前，read将不返回。详细情况见18.11节。
+ICRNL	(c一iflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置
+并且IGNCR未设置，则将接收到的CR字符转换成一个NL字符。
+IEXTEN	(c_lflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+则识别并处理扩充的、实现定义的特殊字符。
+IGNBRK	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)在设置时，
+忽略输入中的BREAK条件。关于BREAK条件是产生SIGINT信号还是被读 作为数据，请见BRKINT。
+IGNCR	(c 一 if lag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+忽略接收到的CR字符。若此标志未设置而设置了ICRNL标志，则将接收到 的CR字符转换成一个NL字符。
+IGNPAR	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)在设置时，
+忽略带有结构错误(非BREAK)或奇俩错的输入字节。
+IMAXBEL (c_if lag, FreeBSD, Linux, Mac OS X，Solaris)当输人队列满时响铃。
+INLCR	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+则将接收到的NL字符转换成CR宇符。
+INPCK	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X，Solaris)当设置时，
+使输入奇偶校验起作用。如若未设置INPCK，则使输入奇偶校验不起作用。 奇偶“产生和检测”和“输入奇偶性检验”是不同的两件事。奇偶位的产 生和检测是由PARENB标志控制的。设置该标志后使串行接口的设备驱动 程序对输出字符产生奇偶位，对输入字符则验证其奇偶性。标志PAR0DD 决定该奇偶性应当是奇还是偶。如果一个到来的字符其奇偶性为错的，则 检查INPCK标志的状态。若此标志已设置，则检查IGNPAR标志(以决定 是否应忽略带奇偶错的输入字节)，若不应忽略此输入字节，则检查 PARMRK标志以决定向读进程应传送那些字符。
+ISIG	(c_lflag, POSIX.I, FreeBSD, Linux, Mac OS X, Solaris)如若设置，
+则判别输入字符是否是要产生终端信号的特殊字符(INTR, QUIT, SUSP 和DSUSP),若是，则产生相应信号。
+ISTRIP	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X，Solaris)当设置时，
+有效输入字节被剥离为7位。当此标志未设置时，则保留全部8位。
+IUCLC	(c_iflag, Linux, Solaris)将输入的大写字符映射为小写字符。
+IXANY	(c_iflag, XSI, FreeBSD, Linux, Mac OS X，Solaris)使任一字符都能
+重新启动输出。
+IXOFF	(c_iflag, POSIX.I, FreeBSD, Linux, Mac OS X，Solaris)如若设置，
+
+ 
+18.5终端选项标志 521
+IXON
+MDMBUF
+NLDLY
+NOFLSH
+NOKERNINFO
+OCRNL
+OFDEL
+OFILL
+OLCUC
+ONLCR
+ONLRET
+ONOCR
+ONOEOT
+OPOST
+OXTABS
+则使启动-停止输入控制起作用。当终端驱动程序发现输入队列将要填满 时，输出一个STOP字符。此字符应当由发送数据的设备识别，并使该设备 暂停。此后，当已对输入队列中的字符进行了处理后，该终端驱动程序将 输出一个START字符，使该设备恢复发送数据。
+(c_if lag, POSIX.1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则使启动-停止输出控制起作用。当终端驱动程序接收到一个STOP字符时， 输出暂停。在输出暂停时，下一个START字符恢复输出。如若未设置此标 志，则START和STOP字符由进程读作为一般字符。
+(c.cflag, FreeBSD, Mac OS X)按照调制解调器的载波标志进行输出 流控制。这是CCAR_OFLOW标志的曾用名。
+(c—of lag, XSI, Linux, Solaris)换行延迟屏蔽。此屏蔽的值是NL0和NL1。 (c_lflag, POSIX.1, FreeBSD, Linux, Mac OS X, Solaris)按系统默 认，当终端驱动程序产生SIGINT和SIGQUIT信号时，输入、输出队列都 被刷新。另外，当它产生SIGSUSP信号时，输入队列被刷新。如若设置了 NOFLSH标志，则在这些信号产生时，不对输入、输出队列进行刷新。 (c_lflag, FreeBSD, Mac OS X)当设置时，此标志防止STATUS字符把 前台进程组的状态信息显示在终端上。但是不论本标志是否设置， STATUS字符使SIGINFO信号送至前台进程组中的所有进程。
+(c_oflag, XSI, FreeBSD, Linux, Solaris)如若设置，将输出的CR字 符映射为NL。
+(c_oflag, XSI, Linux, Solaris)如若设置，则输出填充字符是ASCII DEL,否则它是ASCII NUL。参见OFILL标志。
+(c_oflag, XSI, Linux, Solaris)如若设置，则为了实现延迟，发送填充 字符(ASCII DEL或ASCII NUL,参见OFDEL标志)，而不使用时间延迟。
+参见如下6个延迟屏蔽标志：BSDLY, CRDLY, FFDLY, NLDLY, TABDLY 以及VTDLY。
+(c_oflag, Linux, Solaris)如若设置，将输出的小写字符映射为大写。 (c_of lag, XSI, FreeBSD, Linux, Mac OS X, Solaris)如若设置，将输 出的NL字符映射为CR-NL。
+(c_oflag, XSI, FreeBSD, Linux, Solaris)如若设置，则输出的NL字 符应该执行回车功能。
+(c_oflag, XSI, FreeBSD, Linux, Solaris)如若设置，则在0歹lj不输出CR。 (c_oflag, FreeBSD, Mac OS X)如若设置，则在输出中删除EOT字符 (AD)。在将Ctrl+D解释为挂断的终端上这可能是需要的。
+(c_oflag, POSIX. 1, FreeBSD, Linux, Mac OS X，Solaris)如若设置， 则进行实现定义的输出处理。关于c_oflag字的各种实现定义的标志，见 表 18-4。
+(c_oflag, FreeBSD, Mac OS X)如若设置，制表符在输出中被扩展为 空格。这与将水平制表延迟(TABDLY)设置为XTABS或TAB3产生的效果 相同。
+
+ 
+522 第18章终端I/O
+PARENB
+PAREXT
+PARMRK
+PARODD
+PENDIN
+TABDLY
+TOSTOP
+VTDLY
+XCASE
+(c_cflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则对输出字符产生奇偶位，对输入字符则执行奇偶性检验。若PARODD已 设置，则奇偶校验是奇校验，否则是偶校验。参见对INPCK、IGNPAR和 PARMRK标志的讨论。
+(c_cflag, Solaris)选择标记或空奇偶性。若PARODD设置，则奇偶位总 是1 (标记奇偶性),否则奇偶位总是0 (空奇偶性)。
+(c_iflag, POSIX. 1, FreeBSD, Linux, Mac OS X，Solaris)当设置时， 如果IGNPAR未设置，则结构性错(非BREAK)或奇偶错的字节由进程读 作为三个字符序列\377，\0和X,其中X是接收到的具有错误的字节。如 若工STRIP未设置，则一个有效的\377被传送给进程时为\377,\377。如 若工GNPAR和PARMRK都未设置，则结构性错或奇偶错的字节都被读作为一 个字符\0。
+(c_cf lag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 则输出和输入字符的奇偶性都是奇，否则为偶。注意，PARENB标志控制 奇偶性的产生和检测。	•
+当CMSPAR或PAREXT标志设置时，PARODD标志也控制是否使用标记或空 格的奇偶性。
+(c_lf lag, FreeBSD, Linux, Mac OS X，Solaris)如若设置，则在下一 个字符输入时，尚未读的任何输入都由系统重新打印。这一动作与键入 REPRINT字符时的作用相类似。
+(c_oflag, XSI, Linux, Solaris)水平制表延迟屏蔽标志。此屏蔽标志的
+值是TABO、TAB1、TAB2或TAB3。
+XTABS的值等于TAB3。此值使系统将制表符扩展成空格。系统假定制表符 在屏幕上每8个空格处设置一个。我们不能更改此假定。
+(c_lflag, POSIX. 1, FreeBSD, Linux, Mac OS X, Solaris)如若设置， 并且该实现支持作业控制，则将信号SIGTTOU送到试图写控制终端的一个 后台进程的进程组。按默认，此信号暂停该进涯组中所有进程。如果写控 制终端的进程忽略或阻塞此信号，则终端驱动程序不产生此信号。 (c_oflag, XSI, Linux, Solaris)垂直制表延迟屏蔽标志。此屏蔽标志的 值是VT0或VT1。
+(c_lflag, Linux, Solaris)如若设置，并且工CANON也设置，则认为终端 只是大写终端，所有输入都变换为小写。为了输人一个大写字符，须在其 前加一个\。与之类似，输出一个大写字符也在其前加一个\。(这一标志 如今已经过时，现在几乎所有终端都支持大、小写字符。)
+18.6	stty 命令
+上节说明的所有选项，在程序中都可用tcgetattr和tcsetattr函数(见18.4节)进行 检查和更改。在命令行(或shell脚本)中则可用stty(l)命令进行检查和更改。stty(l)命令是 表18-5中所列的前6个函数的接口。如果以-a选项执行此命令，则显示终端的所有选项：
+
+ 
+18.7波特率函数 523
+$ stty -a
+speed 9600 baud; 25 rows； 80 columns；
+lflags： icanon isig iexten echo echoe -echok echoke -echonl echoctl
+-echoprt -altwerase -noflsh -tostop -flusho pendin -nokerninfo -extproc
+iflags： -istrip icrnl -inlcr -igncr ixon -ixoff ixany imaxbel -ignbrk brkint -inpck -ignpar -parmrk oflags： opost onlcr -ocrnl -oxtabs -onocr -onlret cflags： cread cs8 -parenb -parodd hupcl -clocal -cstopb -crtscts -dsrflow -dtrflow -mdmbuf cchars： discard = ^0; dsusp = ^Y； eof = ^D； eol = <undef>；
+eol2 = <undef>； erase = "H； erase2 =汽？； intr = "'C; kill = "u； lnext = ^V； min = 1； quit = " ； reprint = "'R； start = "Q； status = "T; stop = ~S; susp = "Z; time = 0; werase = "W；
+选项名前若有连字符，则表示该选项禁用。最后四行显示各终端特殊字符的当前设置(见18.3 节)。第1行显示当前终端窗口的行数和列数，18.12节将对此进行讨论。
+stty使用标准输人获得和设置终端的选项标志。虽然，莱些较早的实现使用标准输出，但 POSIX.丨要求使用标准输入。本书讨论的四种实现都提供了在标准输入上操作的stty版本。这意味着 如果我希望了解名为ttyla终端的设置，那么我们可以鍵人
+stty -a </dev/ttyla
+18.7波特率函数
+波特率(baud rate)是一个以往采用的术语，现在它指的是“位/秒”(bits per second)。虽 然大多数终端设备对输入和输出使用同一波特率，但是只要硬件许可，可以将它们设置为两个 不同值。
+#include <termios.h>
+speed一t cfgetispeed(const struct termios *termptr)； speed一t cfgetospeed(const struct termios *termptr)；
+两个函数的返回值：波特率值
+int cf set ispeed (struct termios *termptr, speed—t speed)； int cfsetospeed(struct termios *termptr, speed—t speed)；
+两个函数的返回值：若成功则返回0,若出错则返回-I
+两个cfget函数的返回值，以及两个cfset函数的参数都是下列常量之一：B50、B75、 B110、 B134、 B150、 B200、 B300, B600, B1200, B1800、 B2400, B4800、 B9600、 B19200或B38400。常量B0表示“挂断”。在调用tcsetattr时，如若将输出波特率指定为 B0,则调制解调器的控制线就不再起作用。
+大多数系统定义了另外的波特率值，例如B57600以及B1152C0。
+使用这些函数时，应当理解输入、输出波特率是存放在图18-3所示的设备termios结构中的。 在调用任一cfget函数之前，先要用tcgetattr获得设备的termios结构。与此类似，在调用
+
+ 
+524 第18幸终端I/O
+任一cfset函数后，应将波特率设置到termios结构中。为使这种更改影响到设备，应当调用 [6521 tcsetattr函数。如果所设置的波特率有错，则在调用tcsetattr之前，不会发现这种错误。
+这4个波特率函数使应用程序不必考虑具体实现在termios结构中表示波特率的不同方法。 BSD派生的平台趋向于存放波特率的数值(例如9600波特就存放为9600),同时Linux和系统V 派生的平台趋向于以位屏蔽方式表示波特率。从cfget函数得到的以及向cfset传送的速度值 与它们存放在termios结构中的一样。
+18.8行控制函数
+下列4个函数提供了终端设备的行控制能力。其中，参数引用一个终端设备，否则出
+错返回，errno设置为EN0TTY。
+#include <termios.h>
+int tcdrain(int filedes)；
+int tcf low (int filedes, int action)；
+int tcf lush (int filedes, int queue)；
+int tcsendbreak (int filedes, int duration)；
+四个函数返回值：若成功则返回0,若出错则返回-1
+tcdrain函数等待所有输出都被发送。tcf low用于对输入和输出流控制进行控制。 参数应当是下列四个值之一。
+TC00FF 输出被挂起。
+TCOON 重新启动以前被挂起的输出。
+TCI0FF 系统发送一个STOP字符。这将使终端设备暂停发送数据。
+TCI0N 系统发送一个START字符。这将使终端恢复发送数据。 tcflush函数刷清(抛弃)输入缓冲区或输出缓冲区。输入缓冲区中的数据是终端驱动程 序已接收到，但用户程序尚未读的，输出缓冲区中的数据是用户程序已经写，但尚未发送的。 参数应当是下列三个常量之一：
+TCIFLUSH 刷清输入队列。
+TC0FLUSH 刷清输出队列。
+[653| TCIOFLUSH刷清输入、输出队列。
+tcsendbreak函数在一个指定的时间区间内发送连续的0位流。若dMrafion参数为0,则此 种发送延续0.25至0.5秒之间。POSIX.1说明若办非0，则发送时间依赖于实现。
+18.9终端标识
+历史沿袭至今，在大多数UNIX系统中，控制终端的名字是/dev/tty。POSIX.1提供了一 个运行时函数，可被用来确定控制终端的名字。
+#include <stdio.h> char *ctermid(char *ptr)；
+返回值：若成功则返回指向控制终端名的指针，若出错则返回指向空字符串的指针
+
+ 
+18.9终端标识 525
+如果/^r非mill，则它被认为是一个指针，指向长度至少SL_Ctermid字节的数组，进程的 控制终端名存放在该数组中。常量L_ctermid定义在<stdio.h>中。若pfr是一个空指针，则 该函数为数组(通常作为静态变量)分配空间。同样，进程的控制终端名存放在该数组中。
+在这两种情况中，该数组的起始地址被作为函数值返回。因为大多数UNIX系统都使用 /dev/tty作为控制终端名，所以此函数的主要作用是帮助提高向其他操作系统的可移植性。
+当调用ctermid函数时，本书说明的所有四种平台都返回字符串/dev/tty。
+实例：ctermid■函数
+程序清单18-3是POSIX.1 ctermid函数的一个实现。
+程序清单18-3 POSIX.1 ctermid函数的实现
+#include <stdio.h>
+枯include <string.h>
+static char ctermid_name[L 一ctermid]；
+char *
+ctermid(char *str)
+{
+if (str == NULL)
+str = ctermidname； return(strcpy(str, "/dev/tty"}); /* strcpyO returns str */
+}
+注意，因为我们无法确定调用者的缓冲区大小，所以也就不能防止过度使用该缓冲区。口
+另外两个与终端标识有关的函数是isatty和ttyname。前者在文件描述符引用一个终端 设备时返回真，而后者则返回在该文件描述符上打开的终端设备的路径名。
+#include <unistd.h>	
+int isatty (int filedes)；	
+	返回值：若为终端设备则返回1 (真)，否则返回0 (假)
+char * ttyname (int filedes)；	
+	返回值：指向终端路径名的指针，若出错则返回NULL
+实例：isatty•函数_
+如程序清单18-4所示，isatty函数很容易实现。其中只使用了一个终端专用的函数 tcgetattr (如果成功执行，它不改变任何东西)，并取其返回值。
+	程序清单18-4 POSIX.1 isatty函数的实现	
+#include <termios.h> int
+isatty(int fd)
+{
+struct termios ts；
+
+ 
+526 第18幸终端I/O
+/a	.out
+0：	tty
+1:	tty
+2：	tty
+/a.out
+0:	not
+1:	tty
+2:	not
+</etc/paHSwd 2>/dav/null
+a tty
+a tty
+□
+实例：fctyname函数
+ttyname函数(见程序清单18-6)比较长，因为它要搜索所有设备表项，寻找匹配项。 程序清单18-6 POSIX.1 ttyname函数的实现
+#include #include #include #include #include #include #include
+<sys/stat.h> <dirent.h> <limits,h> <string.h> <termios.h> <unistd.h> <stdlib.h>
+struct devdir {
+struct devdir *d_next; char	*d name;
+static struct devdir static struct devdir static char
+static void
+add(char *dirname)
+★head;
+♦tail；
+pathname[一POSIX 一PATH MAX
+1]
+struct devdir int
+*ddp;
+len；
+len = strlen(dirname)；
+return(tcgetattr(fdf &ts) 1= -1)； /* true if no error (is a tty) */
+用程序清单18-5中的程序测试isatty函数。 	程序清单18-5测试isatty函数
+#include Mapue.h” int
+main(void)
+printf("fd	0：	%s\n",	isatty(0)	"tty"	"not	a	tty.”
+printf("fd	1：	%s\n"f	isatty(1)	"tty"	"not	a	tty")
+printf("fd	2:	%s\nn,	isatty(2)	"tty"	Mnot	a	tty")
+exit(0)；
+当运行程序清单18-5中的程序时，我们可以得到下面的结果:
+fd
+fd
+fd
+$
+fd
+fd
+fd
+
+ 
+18.9终端标识 527
+Skip
+and /dev/fd.
+f) && (dirname[len-23 && dirname[len-3]
+if ((dirname【len-1]
+(dirname[len-2]== return;
+if (strcmp(dirname, M/dev/fd") == 0) return；
+ddp - malloc(sizeof(struct devdir))； if (ddp :: NULL) return；
+ddp->d_name = strdup(dirname)； if (ddp->d_name == NULL) { free(ddp)； return；
+}
+ddp->d_next = NULL； if (tail NULL) { head = ddp； tail = ddp；
+} else {
+tail->d_next = ddp； tail = ddp；
+static void cleanup(void)
+{
+struct devdir
+*ddp, *nddp;
+ddp = head； while (ddp != NULL) { nddp = ddp->d_next； free(ddp->d_name)； free(ddp)； ddp = nddp;
+head
+tail
+NULL；
+NULL;
+static char *
+searchdir(char *dirname, struct stat ♦fdstatp)
+{
+struct stat	devstat；
+DIR	*dp；
+int	devlen; struct dirent *dirp；
+strcpy(pathname, dirname)； if ((dp = opendir(dirname)) == NULL) return(NULL)； strcat(pathname, devlen = strlen(pathname)； while ((dirp = readdir(dp)) !- NULL) {
+strncpy(pathname + devlen, dirp->d_name, _POSIX一PATH MAX - devlen)；	~
+Skip aliases.
+=='r II '/•)))
+
+ 
+528 第18章终端I/O
+if (strcmp(pathname, "/dev/stdin"> == 0 || strcmp(pathname, "/dev/stdout"> == 0 || strcmp(pathname, "/dev/stderr") == 0) continue； if (stat(pathname, &devstat) < 0) continue； if (S_ISDIR(devstat.st_mode)) { add(pathname); continue；
+}
+if (devstat.st_ino == fdstatp->st_ino &&
+devstat.st_dev fdstatp->Bt一dev) { /* found a match */ closedir(dp); return(pathname);
+closedir(dp); return(NULL);
+char *
+ttyname(int fd)
+{
+struct stat fdstat; struct devdir *ddp; char	*rval;
+if (isatty(fd) == 0) return(NULL)； if (fstat(fd, &fdstat) < 0) return(NULL)； if (S_ISCHR(fdstat.st_mode) == 0) return(NULL);
+rval - searchdir(M/dev", &fdstat)； if (rval == NULL) {
+for (ddp = head; ddp != NULL； ddp = ddp->d_next)
+if ((rval = searchdir(ddp->d—name, &fdstat)) != NULL) break；
+}
+cleanup()； return(rval);
+此处用到的方法是读/dev目录，寻找具有相同设备号和i节点编号的表项。回忆4.23节， 每个文件系统有一个唯一的设备号(stat结构中的st_dev字段，见4.2节)，文件系统中的每 个目录项有一个唯一的i节点号(stat结构中的st_ino字段)。在此函数中假定当找到一个匹 配的设备号和匹配的i节点号时，就找到了所希望的目录项。也可验证这两个表项与st_rdev 字段(终端设备的主、次设备号)相匹配，以及该目录项是一个字符特殊文件。但是，因为已 经验证了文件描述符参数是一个终端设备以及一个字符特殊设备，而且在UNIX系统中，匹配 的设备号和i节点号是唯一的，所以不再需要作另外的比较。
+我们的终端名可能在/dev的子目录中。于是，需要搜索在/dev之下的整个文件系统子树。 我们跳过了很多会产生不正确或奇怪结果的目录，它们是/dev/.、/dev/..和/dev/fd。我 们也跳过了一些别名，目卩/dev/stdin、/dev/stdout以及/dev/stderr,它们是对在 /dev/ fd目录中文件的符号链接。
+
+ 
+18.10规范模式 529
+用程序清单18-7测试这一实现。
+	程序清单18-7测试ttyname函数
+#include "apue.h" int
+main(void)
+{
+char *name;
+if (isatty(0)) {
+name = ttyname(0)? if (name «= NULL)
+name = "undefined";
+} else {
+name = "not a tty"；
+}
+printf("fd 0: %s\n", name)；
+if (isatty⑴){
+name = ttyname(1); if (name == NULL)
+name = "undefined"；
+} else {
+name = "not a ttyM；
+}
+printf("fd 1: %s\n", name);
+if (isatty(2)) {
+name = ttyname(2)； if (name =* NULL)
+name = "undefined";
+} else {
+name = nnot a ttyH；
+}
+printf("fd 2: %s\n"f name);
+exit(0);
+运行该程序得到
+$ ./a.out < /dev/consol« 2> /d«v/null
+fd 0: /dev/console fd 1: /dev/ttyp3
+fd 2： not a tty	□
+18.10规范模式
+规范模式很简单：发一个读请求，输入完一行后，终端驱动程序即返回。下列几个条件都 会造成读返回。
+•所要求的字节数已读到时，读返回。无需读一个完整的行。如果读了部分行，那么也不 会丢失任何信息，下一次读从前一次读的停止处开始。
+•当读到一个行定界符时，读返回。回忆18.3节，在规范模式中下列字符被解释为“行结束”: NL、EOL、EOL2和EOF。另外，在18.5节中也曾说明，如若已设置ICRNL,但未设置 IGNCR,则CR字符的作用与NL字符一样，所以它也终止一行。
+在这5个行定界符中，其中只有一个EOF字符在终端驱动程序对其进行处理后即被刪除。 其他4个字符则作为该行的最后一个字符返回给调用者。
+
+ 
+530 第18章终端I/O
+•如果捕捉到信号而且该函数并不自动重启动(见10.5节)，则读也返回。
+实例：getpaaa函数
+下面说明getpass函数，它读人用户在终端上键人的口令。此函数由UNIX login(l)和 crypt(l)程序调用。为了读口令，该函数必须禁止回显，但仍可使终端以规范模式进行工作， 因为用户在键人口令后，一定要键人回车，这样也就构成了一个完整行。程序清单18-8是一个 典型的UNIX实现。
+程序清单18-8 getpass函数的实现
+#include <signal.h>
+#include <stdio.h>
+#include <termios.h>
+#define MAX_PASS_LEN 8	/* max #chars for user to enter */
+char ★
+getpass{const char
+static char char sigset_t struct termios
+FILE
+★prompt)
+buf[MAX 一PASS—LEN + 1]； /* null byte at end */
+*ptr；
+sig, osig；
+ts, ots；
+★fp;
+c；
+if { {fp = fopen( ctermid (NULL) f __r+")) == NULL) return(NULL)； setbuf(fp, NULL)；
+sigemptyset(&sig)?
+sigaddset(&sig, SIGINT)；	/* block SIGINT */
+sigaddsetUsig, SIGTSTP)；	/* block SIGTSTP */
+sigprocmask{SIG—BLOCK, &sigf	&osig)； /* and save mask */
+tcgetattr{fileno{fp), &ts)； /* save tty state */ ots = ts；	/* structure copy */
+ts.c—lflag &〜(ECHO | ECHOE | ECHOK | ECHONL)； tcsetattr{fileno{fp), TCSAFLUSH, &ts); fputs{prompt, fp)；
+ptr = buf；
+while ((c = getc(fp)) != EOF && c != »\nf) if (ptr < &buf[MAX_PASS_LEn])
+*ptr++ = c；
+*ptr = 0；	/* null terminate */
+putcCn', fp) ; /* we echo a newline */
+tcsetattr (fileno (fp) , TCSAFLUSH, Scots); /* restore TTY state * / sigprocmask{SIG—SETMASK, &osig, NULL)； /* restore mask */ fclose(fp);	/* done with /dev/tty */
+return(buf)；
+}
+在此例中，有很多方面应当考虑：
+•调用ctermid函数打开控制终端，而不是直接将/dev/tty写在程序中。
+•只是读、写控制终端，如果不能以读、写模式打开此设备则出错返回。在有些系统中也 使用一些其他约定。在BSD中，如果不能以读、写模式打开控制终端，则getpass从标
+
+ 
+18.10规范模式 531
+准输入读，写到标准出错文件中。系统V版本则总是写到标准出错文件中，但只从控制终 端读。
+•阻塞两个信号SIGINT和SIGTSTP。如果不这样做，则在输入INTR字符时就会使程序终 止，并使终端仍处于禁止回显状态。与此相关似，输入SUSP字符时将使程序暂停，并且 在禁止回显状态下返回到shell。在禁止回显时，选择了阻塞这两个信号。在读口令期间如 果发生了这两个信号，则它们被保持，直到getpass返回前才解除对它们的阻塞。也有 其他方法来处理这些信号。某些getpass版本忽略SIGINT (保存它以前的动作)，在返 回前则将其动作恢复为以前的值。这就意味着在该信号被忽略期间所发生的这种信号都 丢失。其他版本捕捉SIGINT (保存它以前的动作)，如果捕捉到此信号，则在复置终端 状态和信号动作后，用kill函数发送此信号。没有一个getpass版本捕捉、忽略或阻塞 SIGQUIT,所以键入QUIT字符就会使程序夭折，并且终端极可能仍处于禁止回显状态。
+•请注意，某些shell (例如Kom shell)在以交互方式读输入时都使终端处于回显状态。这 些shell是提供命令行编辑的shell,因此在每次输入一条交互命令时都处理终端状态。所 以如果在这种shell下调用此程序，并且用QUIT字符使其夭折，则这种shell可以恢复回显 状态。不提供命令行编辑的shell (例如Boume shell)将使程序夭折，并使终端仍处于不 回显状态。如果对终端做了这种操作，则stty命令能使终端回复到回显状态。
+•我们使用标准I/O读、写控制终端。我们特地将流设置为不带缓冲的，否则在流的读、写 之间可能会有某些相互作用(这样就需调用fflush)。也可使用不带缓冲的I/O (见第3 章)，但是在这种情况下就要用read来实现getc。
+•最多只存储8个字符作为口令。输入的多余字符则被忽略。
+程序清单18-9调用getpass并且打印出我们的输入。这是为了验证ERASE和KILL字符是 否正常工作(如同它们在规范模式下所应该的那样)。
+	程序清单18-9调用getpaBB函数	
+#	inc lude n apue. h ’，
+char *getpass(const char *)；
+int
+main (void)
+{
+char *ptr；
+if ((ptr = getpass("Enter password:")) == NULL) err一sys{"getpass error")； printf("password： %s\n", ptr);
+/* now use password (probably encrypt it) ... */
+while (*ptr != 0)
+*ptr++ * 0;	/* zero it out when we're done with it */
+exit(0);
+}
+调用getpass函数的程序完成后，为了安全起见，应清除存放过用户键入的未经加密的明 文口令的存储区。如果该程序会产生其他用户能读的core文件，或者如果某个其他进程能够 设法读该进程的存储空间，则它们就能读到这种明文口令。(我们用“明文”表示在getpass 输出的提示符后输入的密码。多数UNIX系统会把此明文密码改成“加密”密码。例如，密码
+660
+!
+661
+[6621
+
+ 
+532 第18章终端I/O
+文件中的pw_passwd字段包含的就是加密密码，而不是明文密码。)	口
+18.11非规范模式
+关闭termios结构中c_lflag字段的ICANON标志就使终端处于非规范模式。在非规范模 式中，输人数据并不组成行，不处理下列特殊字符(参见18.3节)：ERASE, KILL、EOF、NL、 EOL、E0L2、CR、REPRINT, STATUS和WERASE。
+如前所述，规范模式很容易：系统每次返回一行。但在非规范模式下，系统怎样才能知道在 什么时候将数据返回给我们呢？如果它一次返回一个字节’那么系统开销就很大。(回忆表3-2, 从中可以看到每次读一个字节的开销会有多大。如果每次返回的数据加倍，系统调用的开销就可 减半。)在启动读数据之前，往往不知道要读多少数据，所以系统不能总是一次返回多个字节。
+解决方法是：当已读了指定量的数据后，或者已经过了给定的时间后，即通知系统返回。 这种技术使用了termios结构中c_cc数组的两个变量：MIN和TIME。c—cc数组中的这两个 元素的下标名为VMIN和VTIME。
+MIN说明一个read返回前的最小字节数。TIME说明等待数据到达的分秒数(秒的1/10为 分秒)。有下列四种情形：
+情形A: MIN>0, TIME>0
+TIME说明字节间的计时器，在接到第一个字节时才启动它。在该计时器超时之前，若 已接到MIN个字节’则read返回MIN个字节。如果在接到MIN个字节之前’该计时器 已超时，则read返回已接收到的字节(因为只有在接到第一个字节时才启动，所以在 计时器超时时，至少返回了1个字节)。这种情形中，在接到第一个字节之前，调用者 P且塞。如果在调用read时数据已经可用，则这如同在read后数据立即被接收到一样。 情形B: MIN>0, TIME == 0
+已经接到了MIN个字节时，read才返回。这可以造成read无限期地阻塞。
+情形C: MIN ==0, TIME >0
+TIME指定了一个调用read时启动的读计时器。(与情形A相比较，两者是不同的。在 情形A中’非0的TIME表示字节间的计时器’在接到第一个字节时才启动它。)在接到 1个字节或者该计时器超时时，read即返回。如果是计时器超时，则read返回0。
+情形D: MIN==0, TIME == 0
+如果有数据可用，则read最多返回所要求的字节数。如果无数据可用，则read立即 返回0。
+在所有这些情形中，MIN只是最小值。如果程序要求的数据多于MIN个字节，那么它可能 接收到所要求的字节数。这也适用于MIN为0的情形C和D。
+表18-7摘要列出了非规范模式输入的四种不同情形。在图中，的第三个参数 (返回的最大字节数)。
+POSIX.I允许下标VMIN和VTIME的值分别与VE0F和VE0L相同。确实，Solaris就是这样做的。这样 就提供了与系统V早期版本的向上兼容性。但是，这也带来了可移枝性问題。从非规范模式转换为规 范模式时’必须恢复VE0F和VE0L,如耒不这样做，那么VMIN等于VE0F,并且它已被设里为典型值1, 于是文件结束字符就变成Ctrl+A。解决这一问題最简单的方法是：在转入非规范楔式时将整个 termios结构保存起来。$以后再转回规范模式时恢复它。
+
+ 
+18.11非規范模式 533
+表18-7非规范输入的四种情形
+MIN>0	MrN—O
+	A：在计时器超时前，read返回	C：在计时器超时前，read返回
+	[MIN, nbytes]»	[\,nbytes]t
+TIME > 0	若计时器超时，read返回	若计时器超时，read返回0
+	[1’MrN )	(TIME=read 计时器)
+	(TIME=字节间计时器，调用者可能无限阻塞)	
+TIME == 0	B：可用时，
+(调用者可能无限阻塞)	D ： read立即返回[0，nbytes]
+程序清单18-10定义了函数tty_cbreak和tty_raw，它们将终端分别设置为cbreak模式和 raw (原始)模式(术语cbreak和raw来自干V7的终端驱动程序)。tty—reset函数的功能是将 终端恢复为以前的工作模式(也就是调用tty_cbreak和tty_raw之前的工作模式)。
+如果已调用tty_cbreak，那么在调用tty_raw之前需要调用ttyjreset。如果已调用 tty一raw,然后又要调用tty_cbreak，那么在此之前同样也要调用tty_reset。这减少了 出错时终端处于不可用状态的机会。
+该程序还提供了 tty_atexit和tty_termios两个函数。tty—at exit可被登记为终止 处理程序，以保证exit恢复终端工作模式；tty_termioS则返回一个指向原先的规范模式 termios结构的指针。
+	程序清单18-10将终端横式设置为原始或cbreak棋式	
+#include "apue.h”
+#include <termios.h>
+#include <ermo.h>
+static struct termios	save一termios;
+static int	ttysavefd = -1;
+static enum { RESET, RAW, CBREAK } ttystate = RESET;
+int
+tty一cbreak(int fd) /* put terminal into a cbreak mode */
+{ _
+int	err;
+struct termios buf;
+if (ttystate != RESET) {	，
+errno = EINVAL; return(-1)；
+}
+if (tcgetattr(fd, &buf) < 0) return(-1); save—termios = buf； /* structure copy */
+/*
+*	Echo off, canonical mode off.
+*/
+buf.c_lflag &= ~(ECHO | ICANON)；
+/*
+*	Case B： 1 byte at a time, no timer.
+
+ 
+534 第18幸终端I/O
+buf.C_CC[VMIN] = 1; buf.C~CC[VTIME] = 0;
+if (tcsetattr(fd, TCSAFLUSH, &buf) < 0) return(-1)；
+*	Verify that the changes stuck. tcsetattr can return 0 on
+*	partial success.
+*/
+if (tcgetattr(fd, &buf) < 0) { err = ermo；
+tcsetattr(fd, TCSAFLUSH, &save一termios); errno = err; return(-1)；
+}
+if ((buf.c一lflag & (ECHO | ICANON)) || buf.c一cc[VMIN] != 1 || buf.c一ccTvTIME] !: 0) {	~
+/*
+*	Only some of the changes were made. Restore the
+*	original settings.
+*/
+tcsetattr(fd, TCSAFLUSH, &save一termios); errno = EINVAL； return(-1)；
+ttystate = CBREAKj ttysavefd =* fd； return(0);
+int
+tty_
+raw(int fd)	/* put terminal into a raw mode */
+int	err?
+struct termios buf;
+if (ttystate != RESET) { errno - EINVAL； return(-1)；
+}
+if (tcgetattr(fd, &buf) < 0) return(-1)； save_termios = buf; /* structure copy */
+*	Echo off, canonical mode off, extended input
+*	processing off, signal chars off.
+*/
+buf.c_lflag &= ~{ECHO | ICANON | IEXTEN | ISIG)；
+*	No SIGINT on BREAK, CR-to-NL off, input parity
+*	check off, don# t strip 8th bit on input, output
+*	flow control off.
+*/
+buf.C—iflag &~(BRKINT | ICRNL | XNPCK | ISTRIP | IXON), /*
+*	Clear size bits, parity checking off.
+
+ 
+18.11非规范模式 535
+buf.c_cflag &= ~(CSIZE | PARENB)；
+/*
+*	Set 8 bits/char.
+*/
+buf.c—cflag |= CS8;
+/*
+*	Output processing off.
+*/
+buf.c_oflag &~(OPOST)；
+/*
+*	Case B： 1 byte at a time, no timer. */
+buf.c_cc[VMIN] = 1； buf.c_cc[VTIME] = 0;
+if (tcsetattr(fd# TCSAFLUSH, &buf) < 0) return(-1)；
+*	Verify that the changes stuck, tcsetattr can return 0 on
+*	partial success.
+*/
+if (tcgetattr(fd, &buf) < 0) { err = errno;
+tcsetattr(fd, TCSAFLUSH, &save_termios)； errno - err; return(-1)；
+}
+if ((buf.C_lflag & (ECHO I ICANON I IEXTEN | ISIG)) ||
+(buf.c—iflag & (BRKINT j XCRNL | INPCK | ISTRIP | IXON)) || (buf.c=cflag & (CSIZE | PARENB | CS8)) != CS8 ||
+(buf.c_oflag & OPOST) || buf.c_cc[VMIN] != 1 || buf.c一cc[VTIME] != 0) {
+/*
+*	Only some of the changes were made. Restore the
+*	original settings.
+*/
+tcsetattr(fd, TCSAFLUSH, &save_termios)； errno ,= EINVAL； return(-1)；
+ttystate = RAW; ttysavefd = fd; return(0)；
+int
+tty一reset(int fd)
+{ _
+if (ttystate ：
+return(0);
+if (tcsetattr(fd
+return(-1)；
+ttystate = RESET
+return(0);
+/* restore terminal's mode */
+RESET)
+TCSAFLUSH, &save_termios) < 0)
+void
+tty_atexit(void)
+can be set up by atexit(tty—atexit) */
+
+ 
+536 第18幸终端I/O
+if (ttysavefd >=0)
+tty_reset(ttysavefd)；
+} 一 struct termios *
+tty一termios(void}	/* let caller see original tty state */
+{
+return《&save—termios)；
+我们对模式的定义如下：
+•非规范模式。如本节开始处所述，这种模式不对某些输入特殊字符进行处理。这种模式 没有关闭对信号的处理，所以用户可以键入任一终端产生的信号。调用程序应当捕捉这 些信号，否则这种信号就可能终止程序，并且终端仍将处于cbreak模式。
+作为一般规则，在编写更改终端模式的程序时，应当捕捉大多数信号，以便在程序 终止前恢复终端模式。
+•关闭回显(ECHO)标志。
+•每次输入一个字节。为此将MIN设置为1,将TIME设置为0。这是表18-7中的情形B。至 少有一个字节可用时，read再返回。
+对原始模式的定义如下：
+•非规范模式。也关闭了对产生信号字符(工SIG)和扩充输入字符(IEXTEN)的处理。
+另外，禁用BRKINT,这样就使BREAK字符不再产生信号。
+•关闭回显(ECHO)标志。
+•禁用ICRNL、INPCK、ISTRIP和IXON标志。从而不再将输入的CR字符变换为NL (ICRNL),使输入奇偶校验不起作用(INPCK),不再剥离输入字节的第8位(ISTRIP), 不进行输出流控制(IXON)。
+•8位字符(CS8),且禁用奇偶性检测(PARENB)。
+•禁用所有输出处理(0POST)。
+•每次输入一个字节(MIN=1，TIME = 0)。
+程序清单18-11测试原始模式和cbreak模式。
+	程序清单18-11测试原始终端模式和cbreak终端横式	
+#include " apue .h11
+static void sig_catch(int signo)
+printf("signal caught\n")； tty 一reset(STDIN一FILENO)； exit(0)；
+}
+main(void)
+{
+int i ； char c ；
+if (signal(SIGINT, sig_catch) == SIG_ERR) /* catch signals */ err_sys("signal(SIGINT) error")；
+
+ 
+18.12终端的窗口大小 537
+if (signal(SIGQUIT, sig一catch) == SIG_ERR) err 一sys("signal(SIGQUIT) error")； if (signal(SIGTERM, sig一catch} == SIG_ERR) err一sys("signal(SIGTERM) error")；
+if (tty_raw(STDIN^FILENO) < 0) err_sys("tty 一raw error"); printf (*'Enter raw mode characters, while ((i = read(STDIN 一FILENO, &c, if ((c &= 255) == 0177)	/*
+break; printf(”％o\n", c);
+terminate with DELETE\n”)； 1)) «= 1) {
+0177 = ASCII DELETE */
+if (tty_reset(STDIN一FILENO) < 0)
+err sys("tty reset error"};
+if (i <= 0) ~
+err—sys("read error”);
+if (tty 二cbreak(STDIN_FILENO} < 0)
+err 一sys("tty 一cbreak error")；
+printf("\nEnter cbreak mode characters,
+while ((i = read(STDIN一 FILENO, &cf 1)):
+c &= 255;
+printf("%o\ntt, c)；
+}
+if (tty—reset(STDIN-FILENO) < 0)
+err一sys("tty_reset error")；
+if (i <- 0) ~
+err_sys("read error");
+exit(0)；
+terminate :=1) {
+运行该程序可以观察这两种终端工作模式的工作情况。
+$ •/••out
+Enter raw mode characters, terminate with DELETE
+33
+133
+61
+70
+176
+键入DELETE
+Enter cbreak mode characters, terminate with SIGINT
+1	键入Ctri+A
+10	键入退格
+signal caught	键入中断符
+在原始模式中，输入的字符是Ctrl+D(04)和特殊功能键F7。在所用的终端上，此功能键产生5个 字符：ESC (033), [ (0133), 1 (061), S (070)和~ (0176)。注意，在原始模式下关闭了输出处理 (-0P0ST),所以在每个字符后没有得到回车符。另外也要注意的释，在cbreak模式下，不对输 入特殊字符进行处理(所以对Ctrl+D、文件结束符和退格等不进各特殊处理)，但是对终端产 生的信号则进行处理。	口
+18.12终端的窗口大小
+大多数UNIX系统都提供了一种功能，可以对当前终端窗口的大小进行跟踪，在窗口大小
+
+ 
+538 第18幸终端I/O
+rows, in characters */ columns, in characters */ horizontal size, pixels (unused) */ vertical size, pixels (unused) */
+struct winsize {
+unsigned short	ws_row;
+unsigned short	ws_col;
+unsigned short	ws一xpixel;
+unsigned short	ws_ypixel;
+发生变化时，使内核通知前台进程组。内核为每个终端和伪终端保存一个winsize结构:
+此结构的作用如下：
+•用ioctl (见3.15节)的TIOCGWINSZ命令可以取此结构的当前值。
+•用ioctl的TIOCSWINSZ命令可以将此结构的新值存放到内核中。如果此新值与存放在 内核中的当前值不同，则向前台进程组发送SIGWINCH信号。(注意，从表10-1中可以看 出，此信号的系统默认动作是忽略。)
+•除了存放此结构的当前值以及在此值改变时产生一个信号以外，内核对该结构不进行任 何其他操作。对结构中的值进行解释完全是应用程序的工作。
+•提供这种功能的目的是，当窗口大小发生变化时通知应用程序(例如vi编辑程序)。应用 程序接到此信号后，它可以取窗口大小的新值，然后重绘屏幕。
+ 
+程序清单18-12打印当前窗口大小，然后休眠。每次窗口大小改变时，就捕捉到SIGWINCH 信号，然后打印新的窗口大小。必须用一个信号终止此程序。
+	程序清单18-12打印窗口大小	
+#include "apue.h"
+#include <termios.h>
+#ifndef TIOCGWINSZ #include <sys/ioctl,h>
+#endif
+static void pr_winsize(int fd)
+{'
+struct winsize size；
+if (ioctl(fd, TIOCGWINSZ, (char *) &size) < 0) err一sys("TIOCGWINSZ error")；
+) printf("%d rows, %d columns\n”， size.ws_row# size.ws_col);
+static void
+sig_winch(int signo)
+{ 一
+printf("SIGWINCH received\nM)； pr_winsize(STDIN—FILENO};
+} ' int
+main(void)
+{
+if (isatty(STDIN 一FILENO) == 0) exit(1)；
+if (signal(SIGWINCH, sig—winch} == SIG一ERR} err sys("signal error")；
+/*
+/*
+/*
+/*
+
+ 
+18.13 termcap, terminfo和curses 539
+winsize(STDIN FILENO),
+for
+pause () j
+/* print initial size */ /* and sleep forever */
+岡
+在一个带窗口终端的系统上运行此程序得到：
+$ ./a.out
+35 rows, 80 columns SIGWINCH received 40 rows, 123 columns SIGWINCH received 42 rows, 33 columns
+起始长度
+更改窗口大小：捕捉到信号 再来一次 击中断键以终止
+□
+18.13 termcap, terminfo和curses
+termcap的意思是终端能力(terminal capability)，它指的是文本文件/etc/termcap 和一套读此文件的例程。termcap这种技术是在伯克利发展起来的，主要是为了支持vi编辑 器。termcap文件包含了对各种终端的说明：终端支持哪些功能(行数、列数、是否支持退 格等)，如何使终端执行某些操作(清屏、将光标移动到指定位置等)。把这些信息从编译过 的程序中取出来并把它们放在易于编辑的文本文件中，这样就使得vi能在很多不同的终端上 运行。
+后来，支持termcap文件的一套例程从vi编辑程序中抽取出来，放在一个单独的curses 库中。为使这套库被要进行屏幕处理的任何程序使用，人们给它增加了很多功能。
+termcap这种技术不是很完善。当越来越多类型的终端被加到该数据文件中时，为了找到 一个特定的终端就须使用较长的时间扫描此文件。此数据文件也只用两个字符的名字来标识不 同的终端属性。这些缺陷导致开发另一种新技术——terminfo及与其相关的curses库。在 terminfo中的终端说明基本上是文本说明的编译版本，在运行时易于快速定位。terminfo 从SVR2就开始使用，此后所有的系统V版本都使用了它。
+以往，基于系统V的系统使用terminfo,而BSD派生的系统则使用termcap,但是现在，系统常 常提供这两者。而Mac OS X仅支持i.tMiinfOp
+Goodheart[1991]对terminfo和curses库进行了详细说明，但此书已绝版。Strang[1986]
+说明了curses函数库的伯克利版本。Strang、Mui和0’Reilly[1988]则对termcap和terminfo 进行了说明。
+可在http: //invisible-island.net/ncurses/ncurses .html上找到与SVR4 curses接口 兼 容的自由版本的ncurses函数库。
+不论是termcap还是terminfo,它们本身都不处理本章所述及的问题，如更改终端的模 式、更改终端特殊字符以及处理窗口大小等等。它们所提供的是在各种终端上执行一般性操作 (清屏、移动光标)的方法。另一方面，在本章所述问题方面，curses能提供某种具体细节方_ 面的帮助。curses提供了很多函数，包括设置原始模式、设置cbreak模式、打开和关闭回显等 等。但是curses是为字符型终端设计的，而现在字符型终端大部分已被以像素为基础的图形 终端所代替。
+
+ 
+540 第18章终端I/O
+18.14小结
+终端有很多特征和选项，其中大多数都可按需进行改变。本章说明了很多更改终端操作的 函数，比如更改特殊输入字符和可选择标志的函数，还介绍了可对终端设备设置的各个终端特 殊字符以及很多选项。
+终端的输入模式有规范的(每次一行)和非规范的两种。本章中包含了若干这两种工作模 式的实例，也提供了一些函数，它们在POSIX.1终端选项和较早的BSDcbreak及原始模式之间 进行变换。本章还说明了如何取得和改变终端的窗口大小。
+习题
+18.1	编写一个调用tty_raw并且不恢复终端模式就终止的程序。如果你的系统提供reset(l) 命令(本书说明的所有四种平台都提供)，使用该命令恢复终端模式。
+18_2 c一cflag字段的PARODD标志允许我们设置奇偶校验，而BSD中的tip程序也允许奇偶校 验位是0或1,它是如何实现的？
+18.3	如果你的系统中stty(l)命令输出MIN和TIME值，做下面的练习。两次登录系统，其中 一次登录时打开vi编辑器，在另外一次登录中用s t ty命令确定vi设置的MIN和TIME值 (vi将终端设置为非规范模式)。(如果在你的终端上运行窗口系统，那么你也可以进行同 样的测试，方法是：登录一次，然后用两个分开的窗口。)
+
+ 
+

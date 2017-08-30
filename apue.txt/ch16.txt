@@ -1,0 +1,1027 @@
+第16章
+网络IPC:套接字
+16.1引言
+上一章考査了各种UNIX系统所提供的经典进程间通信(IPC)机制：管道、先进先出、消 息队列、信号量以及共享内存。通过这些机制，同一台计算机上运行的进程可以相互通信^本 章将考査不同计算机(通过网络相连)上运行的进程相互通信的机制：网络进程间通信 (network IPC)。
+在本章中，将描述套接字网络IPC接口，进程能够使用该接口和其他进程通信。通过该接 口，其他进程运行位置是透明的，它们可以在同一台计算机上也可以在不同的计算机上。实际 上，这正是套接字接口的目标之一：同样的接口既可以用于计算机间通信又可以用于计算机内 通信。尽管套接字接口可以采用许多不同的网络协议，但本章的讨论仅限于因特网事实上的通 信标准：TCP/IP协议栈。
+P0SIX.1所规定的套接字API是基于4.4BSD套接字接口的。尽管这些年有些微小变化，但 是当前的套接字接口与20世纪80年代早期4.2BSD中最初引入的接口仍然非常类似。
+本章只是对套接字API的概述。Stevens、Feimer和Rudoff[2004]在有关UNIX系统网络编程 的权威性文献中详细讨论了套接字接口。
+16.2套接字描述符
+套接字是通信端点的抽象。与应用程序要使用文件描述符访问文件一样，访问套接字也需 要用套接字描述符。套接字描述符在UNIX系统是用文件描述符实现的。事实上，许多处理文 件描述符的函数(如read和write)都可以处理套接字描述符。
+要创建一个套接字，可以调用socket函数。
+#include <sys/socket.h>
+int socket (int domain, int type, int protocol)；
+返回值：若成功则返回文件(套接字)描述符，若出错则返回-1
+参数domain (域)确定通信的特性，包括地址格式(在下一小节详细讲述)。表16-1总结了由 P0SIX.1指定的各个域。各个域有自己的格式表示地址，而表示各个域的常数都以AF_开头， 意指地址族(address family)。
+UNIX域将在17.3节讨论。多数系统还会定义AF_L0CAL域，这是AF_UNIX的别名。 AF_UNSPEC域可以代表任何域。历史上，有些平台支持其他网络协议(如AF_IPX为NetWare 协议族)，但这些协议的域常数没有在POSIX.1标准中定义。
+15451
+
+ 
+438 第16幸网络IPC:套接字
+表16-1套接字通傕域
+域	描述
+AF_INET
+AF_INET6
+AF_UNIX
+AF_UNSPEC	IPv4因特网域 IPv6因特网域 UNIX 域 未指定
+参数确定套接字的类型，进一步确定通信特征。表16-2总结了由P0SIX.1定义的套接 字类型，但在实现中可以自由增力n对其他类型的支持。
+表16-2套接字类型
+类型	描述
+S0CK_DGRAM S0CK_RAW SOCK一SEQPACKET S0CK_STREAM	长度固定的、无连接的不可靠报文传递 IP协议的数据报接口(POSDU中为可选) 长度固定、有序、可靠的面向连接报文传递 有序、可靠、双向的面向连接字节流
+(HI 参数prafocoZ通常是零，表示按给定的域和套接字类型选择默认协议。当对同一域和套接 字类型支持多个协议时，可以使用profocoZ参数选择一个特定协议。在AF_INET通信域中套接 字类型SOCK_STREAM的默认协议是TCP (传输控制协议)。在AF_INET通信域中套接字类型 SOCK_DGRAM的默认协议是UDP (用户数据报协议)。
+对于数据报(SOCK_DGRAM)接口，与对方通信时是不需要逻辑连接的。只需要送出一个 报文，其地址是一个对方进程所使用的套接字。
+因此数据报提供了一个无连接的服务。另一方面，字节流(SOCK_STREAM)要求在交换 数据之前，在本地套接字和与之通信的远程套接字之间建立一个逻辑连接。
+数据报是一种自包含报文。发送数据报近似于给某人邮寄信件。可以邮寄很多信，但不能 保证投递的次序，并且可能有些信件丢失在路上。每封信件包含接收者的地址，使这封信件独 立于所有其他信件。每封信件可能送达不同的接收者。
+相比之下，使用面向连接的协议通信就像与对方打电话。首先，需要通过电话建立一个连 接，连接建立好之后，彼此能双向地通信.每个连接是端到端的通信信道。会话中不包含地址 信息，就像呼叫的两端存在一个点对点虚拟连接，并且连接本身暗含特定的源和目的地。
+对于SOCK一STREAM套接字，应用程序意识不到报文界限，因为套接字提供的是字节流服 务。这意味着当从套接字读出数据时，它也许不会返回所有由发送进程所写的字节数。最终可 以获得发送过来的所有数据，但也许要通过若干次函数调用得到。
+SOCK一SEQPACKET套接字和SOCK—STREAM套接字很类似，但从该套接字得到的是基于报 文的服务而不是字节流服务。这意味着从SOCK_SEQPACKET套接字接收的数据量与对方所发 送的一致。流控制传输协议(Stream Control Transmission Protocol, SCTP)提供了因特网域上 的顺序数据包服务。
+SOCK—RAW套接字提供一个数据报接口用于直接访问下面的网络层(在因特网域中为BP)。使 用这个接口时，应用程序负责构造自己的协议首部，这是因为传输协议(TCPfqUDP^)被绕过了。 当创建一个原始套接字时需要有超级用户特权，用以防止恶意程序绕过内建安全机制来创建报文。
+调用socket与调用open相类似。在两种情况下，均可获得用于输入/输出的文件描述符。
+
+ 
+16.3 寻 址 439
+当不再需要该文件描述符时，调用close来关闭对文件或套接字的访问，并且释放该描述符以 便重新使用。
+虽然套接字描述符本质上是一个文件描述符，但不是所有参数为文件描述符的函数都可以_ 接受套接字描述符。表16-3总结了到目前为止所讨论的大多数使用文件描述符的函数处理套接 字描述符时的行为。未规定的和由实现定义的行为通常意味着函数不能处理套接字描述符。例 如，lseek不处理套接字，因为套接字不支持文件偏移量的概念。
+表16-3使用文件描述符的函数处理套接字时的行为
+函数	处理套接字时的行为
+close (3.3节) dup, dup2 (3.12 节) fchdir (4.22节) fchmod (4.9节) fchown (4.11节) fcntl (3.14节)
+fdatasync, fsync (3.13节)
+fstat (4.2节)
+ftruncate (4_13节)
+getmsg,getpmsg (14,4节)
+ioctl (3,15节)
+lseek (3.6节)
+mmap (14.9节)
+poll (14_5_2小节)
+putmsg, putpmsg (14.4节)
+read (3.7节)和readv (14.7节)
+select (14.5_1 小节)
+write (3.8节)和writev (14.7节)	释放套接字
+和一般文件描述符一样复制 失败，并且将errno设置为EN0TDIR 未规定 由实现定义
+支持一些命令，例如F_DUPFD，F_GETFD, F_GETFL, F_GET0WN, F_SETFD, F一SETFL，F_SET0WN 由实现定义
+支持一些stat结构成员，但如何支持由实现定义 未规定
+如果套接字由STREAMS实现则可支持，例如在Solaris平台上
+支持部分命令，依赖于底层设备驱动
+由实现定义(通常是失败并且将errno设为ESPIPE)
+未规定 正常工作
+如果套接字由STREAMS实现则可支持，例如在Solaris平台上
+与没有任何标志位的recv (16.5节)等价 正常工作
+与没有任何标志位的send (16.5节)等价
+套接字通信是双向的。可以采用函数shutdown来禁止套接字上的输入觸出。
+#include <sys/socket,h>	
+int shutdown (int sockfd, int how)；	
+	返回值：若成功则返回0,若出错则返回-1
+如果/KW是SHUT_RD (关闭读端)，那么无法从套接字读取数据，如果/KW是SHUT_WR (关闭写 端)，那么无法使用套接字发送数据，使用SHUT_RDWR则将同时无法读取和发送数据。
+能够close (关闭)套接字，为何还使用shutdown呢？理由如下：首先，close只有在 最后一个活动引用被关闭时才释放网络端点。这意味着如果复制一个套接字(例如采用dup), _ 套接字直到关闭了最后一个引用它的文件描述符之后才会被释放。而shutdown允许使一个套 接字处于不活动状态，无论引用它的文件描述符数目多少。其次，有时只关闭套接字双向传输 中的一个方向会很方便。例如，如果想让所通信的进程能够确定数据发送何时结束，可以关闭 该套接字的写端，然而通过该套接字读端仍可以继续接收数据。
+16.3寻址
+上一节中学习了如何创建和销毁一个套接字。在学习用套接字做一些有意义的事情之前，
+
+ 
+440 第16章网络IPC:套接字
+需要知道如何确定一个目标通信进程。进程的标识有两个部分：计算机的网络地址可以帮助标
+识网络上想与之通信的计算机，而服务可以帮助标识计算机上特定的进程。
+16.3.1字节序
+运行在同一台计算机上的进程相互通信时’ 一般不用考虑字节的顺序(字节序)，字节序
+是一个处理器架构特性’用于指示像整数这样的大数据类型的内部字节顺序。图16-1显示一个
+32位整数内部的字节是如何排序的。
+如果处理器架构支持大端(big-endian)字节序，那么最大
+字节地址对应于数字最低有效字节(LSB)上，小端(little-
+endian) 字节序则相反：数字最低字节对应于最小字节地址。注
+意，不管字节如何排序，数字最高位总是在左边，最低位总是
+在右边。因此，如果想给一个32位整数赋值0x04030201，不
+管字节如何排序，数字最高位包含4，数字最低位包含1。如果
+接着想将一个字符指针(cp)强制转换到这个整数的地址，将
+看到字节序带来的不同。在小端字节序的处理器上，cp[0]指
+向数字最低位随包含1，cp[3]指向数字最高位随包含4。眺1 32位麵内部的字节序
+相比较而言’对于大端字节序的处理器’ cp[0]指向数字最高位因而包含4，cp[3]指向数字
+最低位因而包含1。表16-4总结了本文所讨论的4种平台的字节序。
+表16-4测试平台的字节序
+大端
+n	n+1 n+2	n+3
+MSB		LSB
+	小端	
+n+3	n+2 - n+2	n
+操作系统	处理器架构	字节序
+FreeBSD 5.2.1	Intel Pentium	小端
+Linux 2.4.22	Intel Pentium	小端
+Mac OS X 10.3	PowerPC	大端
+Solaris 9	Sun SPARC	大端
+有些处理器可以配置成大端或小端，使问題变得乱上加乱。	—
+网络协议指定了字节序’因此异构计算机系统能够交换协议信息而不会混淆字节序。 TCP/IP协议栈采用大端字节序。应用程序交换格式化数据时’字节序问题就会出现。对于 TCP/IP’地址用网络字节序来表示，所以应用程序有时需要在处理器的字节序与网络字节序之 间的转换。例如，当打印一个易于阅读的地址时，这种转换是很平常的。
+对于TCP/IP应用程序，提供了四个通用函数以实施在处理器字节序和网络字节序之间的转换。
+#include <arpa/inet,h> uint32_t htonl (uint32_t hostint32)；
+返回值：以网络字节序表示的32位整型数
+uintl6_t htons (uintl6_t hostintl6);
+返回值：以网络字节序表示的16位整型数
+uint32_t ntohl (uint32_t netint32)；
+返回值：以fc机字节序表示的32位整型数
+uintl6_t ntohs (uintl6_t netintl6)；
+—	返回值：以fe机字节序表示的16位整型数
+
+ 
+16.3 寻址 441
+h表示“主机(host)”字节序，n表示“网络(network)”字节序。1表示“长(long)”整数 (即4个字节)，s表示“短(short)”整数(即2个字节)。这4个函数定义在<虹？3/:111的.11>中, 也有比较老的系统将其定义在<netinet/in.h>中。
+16.3.2地址格式
+地址标识了特定通信域中的套接字端点，地址格式与特定的通信域相关。为使不同格式地 址能够被传入到套接字函数，地址被强制转换成通用的地址结构sockaddr表示：
+struct sockaddr {
+sa一family 一t sa一family; /* address family */
+char	sa_data 13 ? /* variable-length address */
+套接字实现可以自由地添加额外的成员并且定义sa_data成员的大小。例如在Linux中，该结
+构定义如下：
+struct sockaddr {
+sa_family 一t sa_family; /* address family */
+char	sa一data[14]; /* variable-length address */
+}； ~
+而在FreeBSD中，该结构定义如下：
+struct sockaddr {
+unsigned char sa_len；
+sa_family_t sa—family;
+char	sa一data[14];
+}； ~
+因特网地址定义在<netinet/in.h>中。在IPv4因特网域(AF_INET)中，套接字地址
+用如下结构sockaddr_in表示：
+struct in一addr {
+in一addr一t	s_addr;	/* IPv4 address */
+struct sockaddr一in {
+sa—family 一t sin 一family
+in_port_t	sin」port;
+struct in addr sin addr；
+}-■ 一 一
+数据类型in_port_t定义成uintl6_t。数据类型in_addr_t定义成uint32_t。这些整数
+类型在<stdint.h#定义并指定了相应的位数。
+与IPv4因特网域(AF_INET)相比较，IPv6因特网域(AF_INET6)套接字地址用如下结 构 sockaddr_in6 表示：
+struct in6_addr {
+uint8__t	s6_addr [16] ; /* IPv6 address */
+}； 一 _ struct sockaddr—in6 {
+sa一family—t sin6一family; /* address family */ in_j>ort_t	sin6_port;	/* port number */
+/* address family */ /* port number */
+/* IPv4 address */
+/* total length */
+/* address family */
+/* variable-length address */
+國
+國
+
+ 
+442 第16幸网络IPC:套接字
+uint32_t	sin6_flowinfo；
+struct in6—addr sin6—addr; uint32_t	sin6_scope_id；
+traffic class and flow info */ IPv6 address */
+set of interfaces for scope */
+这些是Single UNIX Specification必需的定义，每个实现可以自由地添加额外的字段。例如，在
+Linux中，sockaddr一in定义如下：
+struct sockaddr_in {
+sa一family_t sin 一family;
+in_port_t	sin_port；
+struct in 一addr sin—addr;
+unsigned char sin 一zero[8];
+/*	address family *
+/*	port number */
+/*	IPv4 address */
+卜	filler */
+其中成员sin_zero为填充字段，必须全部被置为0。
+注意，尽管sockaddr_in与sockaddr_in6相差比较大，它们均被强制转换成 sockaddr结构传入到套接字例程中。在17.3节，将会看到UNIX域套接字地址与上述因特网域 套接字地址格式的不同。
+有时，需要打印出能被人而不是计算机所理解的地址格式。BSD网络软件中包含了函数 inet_addr和inet_ntoa,用于在二进制地址格式与点分十进制字符串表示(a.b.c.d)之间 相互转换。这些函数仅用于IPv4地址，但功能相似的两个新函数inet_ntop和inet_pton支 持IPv4和IPv6地址。
+#include <arpa/inet,h>
+const char *inet_ntop(int domain, const void ^restrict addr,
+char ^restrict sir, socklen_t size)；
+返回值：若成功则返回地址字符串指针，若出错则返回NULL
+int inet_pton {int domain, const char ♦restrict str, void ^restrict addr);
+返回值：若成功则返回1，若格式无效则返回0，若出错则返回-1
+函数inet_ntop将网络字节序的二进制地址转换成文本字符串格式，inet_pton将文本 字符串格式转换成网络字节序的二进制地址。参数仅支持两个值：AF_INET和AF_ INET6。
+对于inet_ntop,参数s/ze指定了用以保存文本字符串的缓冲区(协•)的大小。两个常数 用于简化工作：INET_ADDRSTRLEN定义了足够大的空间来存放表示IPv4地址的文本字符串， INET6_ADDRSTRLEN定义了足够大的空间来存放表示IPv6地址的文本字符串。对于 inet—pton,如果rfo/nai/i是AF_INET,缓冲区arfrfr需要有足够大的空间来存放32位地址，如 果rfo;細>1为AF_INET6则需要足够大的空间来存放128位地址。
+16.3.3地址查询
+理想情况下，应用程序不需要了解套接字地址的内部结构。如果应用程序只是简单地传递 类似于sockaddr结构的套接字地址，并且不依赖于任何协议相关的特性，那么可以与提供相 同服务的许多不同协议协作。
+历史上，BSD网络软件提供接口访问各种网络配置信息。在6.7节，简要地讨论了网络数据 文件和用来访问这种信息的函数。在本节，将更加详细地讨论一些细节，并且引入新的函数来
+* * *
+/ / /
+
+ 
+16.3 寻址 443
+name of host */
+pointer to alternate host name array */
+address type V
+length in bytes of address */
+pointer to array of network addresses */
+hostent { *h_name； **h_aliases; h 一addrtype； h一length;
+**h 一addr list；
+査询寻址信息。
+这些函数返回的网络配置信息可能存放在许多地方。它们可以保存在静态文件中(如, /etc/hosts, /etc/services等)，或者可以由命名服务管理，例如DNS (Domain Name System)或者NIS (Network Information Service)。无论这些信息放在何处，这些函数同样能够 访问它们。
+通过调用gethostent，可以找到给定计算机的主机信息。
+#include <netdb.h>
+struct hostent ^gethostent(void)；
+返回值：若成功则返回指针，若出错则返回NULL
+void sethostent {int stayopen)； void endhostent(void)；
+如果主机数据文件没有打开，gethostent会打开它。函数gethostent返回文件的下一个条 目。函数sethostent婆打开文件，如果文件已经被打开，那么将其回绕。函数endhostent 将关闭文件。
+当gethostent返回时，得到一个指向hostent结构的指针，该结构可能包含一个静态的数 据缓冲区。每次调用gethostent将会覆盖这个缓冲区。数据结构hostent至少包含如下成员：
+返回的地址采用网络字节序。
+两个附加的函数gethostbyname和gethostbyaddr，原来包含在hostent函数里面，
+现在被认为是过时的，马上将会看到其替代函数。	_
+能够采用一套相似的接口来获得网络名字和网络号。
+#include <netdb.h>
+struct netent *getnetbyaddr《uint32一t net, int type)； struct netent *getnetbyname(const char ^name); struct netent ^getnetent《void);
+以上三个函数的返回值：若成功则返回指针，若出错则返回null
+void setnetent (int stayopen); void endnetent(void);
+结构netent至少包含如下字段：
+struct netent {
+char *n name;	/* network name */
+•ucl
+!ha]
+!ha]
+nt
+nt
+:ha]
+
+ 
+protocol name */
+pointer to alternate protocol name array */ protocol number */
+service name */
+pointer to alternate service name array */ port number */ name of protocol */
+struct protoent { char *p_name; char **p一aliases;
+int	p_proto；
+alternate network name array pointer */ address type */ network number */
+struct servent { char *s_name； char **s_aliases; int s_port ； char *s一proto；
+网络号按照网络字节序返回。地址类型是一个地址族常量(例如AF_INET)< 可以将协议名字和协议号采用以下函数映射。
+#include <netdb.h>
+struct protoent * get protobyname (const char *nante)； struct protoent *getprotobynumber (int proto); struct protoent *getprotoent(void)；
+以上所有函数的返回值：若成功则返回指针，若出错则返回NULL
+void setprotoent (int stayopen)； void endprotoent(void)；
+POSIX.1定义的结构protoent至少包含如下成员;
+char **n_aliases; int	n—addrtype;
+uint32一t n_net；
+服务是由地址的端口号部分表示的。每个服务由一个唯一的、熟知的端口号来提供。采用 函数getservbyname可以将一个服务名字映射到一个端口号，函数getservbyport将一个 端口号映射到一个服务名，或者采用函数get servent顺序扫描服务数据库。
+斡include <netdb.h>
+struct servent *getservbyname (const char *name, const char ^proto)； struct servent ^getservbyport (int port, const char * proto)； struct servent *getservent(void)；
+以上所有函数的返回值：若成功则返回指针，若出错则返回NULL
+void set servent (int stayopen)； void endservent(void)；
+结构servent至少包含如下成员：
+444 第16章网络IPC:套接字
+/*
+卜
+/*
+卜
+* * *
+/ / /
+
+ 
+16.3 寻址 445
+POSIX. 1定义了若干新的函数，允许应用程序将一个主机名字和服务名字映射到一个地址， 或者相反。这些函数代替老的函数gethostbyname和gethostbyaddr。
+函数getaddrinfo允许将一个主机名字和服务名字映射到一个地址。
+斡include <sys/sock:et ,h>
+#include <netdb.h>
+int getaddrinfo (const char * restrict host,
+const char * re strict service,
+const struct addrinfo * restrict hint,
+struct addrinfo “restrict res)；
+返回值：若成功则返回0，若出错则返回非0错误码
+void freeaddrinfo (struct addrinfo *ai)；
+需要提供主机名字、服务名字，或者两者都提供。如果仅仅提供一个名字，另外一个必须是一 个空指针。主机名字可以是一个节点名或点分十进制记法表示的主机地址。
+函数getaddrinfo返回一个结构addrinfo的链表。可以用freeaddrinfo来释放一个 或多个这种结构，这取决于用ai_next字段链接起来的结构有多少。
+结构addrinfo的定义至少包含如下成员：
+struct addrinfo {
+int	ai_	flags；	卜	customize behavior	叫
+int	ai_	family;	/*	address family */	
+int	ai_	socktype；	/*	socket type */	
+int	ai一protocol;	/*	protocol */	
+socklen一t	ai_	addrlen；	h	length in bytes of	address
+struct sockaddr		addr ；	h	address */	
+char	^ai_	canonname；	/*	canonical name of	host */
+struct addrinfo	*ai_	next ；	h	next in list */	
+根据某些规则，可以提供一个可选的如'财来选择地址。是一个用于过滤地址的模板，仅
+使用ai_family、ai_flags、ai_protocol和ai_socktype字段。剰余的整数字段必须 设为零，并且指针字段为空。表16-5总结了在ai_flags中所用的标志，这些标志用来指定如 何处理地址和名字。
+表16-5 addrinfo结构标志
+志	描述
+AI_ADDRC0NFIG
+AI_ALL
+AI_CAN0NNAME
+AI_NUMERICHOST
+AI_NUMERICSERV
+AI_PASSIVE
+AI_V4MAPPED	查询配置的地址类型(IPv4或IPv6)
+查找IPv4和IPv6地址(仅用于AI—V4MAPPED)
+需要一个规范名(而不是别名)
+以数字格式返回主机地址 以端口号返回服务 套接字地址用于监听绑定
+如果没有找到IPv6地址，则返回映射到IPv6格式的IPv4地址
+如果getaddrinfo失败，不能使用perror或strerror来生成错误消息。替代地，调用 gai_strerror将返回的错误码转换成错误消息。
+
+ 
+446 第16章网络IPC:套接字
+#include <netdb.h>	
+const char *gai_strerror(int error)；	
+	返回值：指向描述错误的字符串的指针
+函数getnameinfo将地址转换成主机名或者服务名。
+#include <sys/socket.h>
+#include <netdb.h>
+int getnameinfo(const struct sockaddr ♦restrict addr, socklen一t alen, char ^restrict host, socklen_t hostlen, char ^restrict service, socklen_t servlen, unsigned int flags) ?
+返回值：若成功则返回0，若出错则返回非0值
+套接字地址{addr、被转换成主机名或服务名。如果/uwt非空，它指向一个长度为/uwt/e/i字节 的缓冲区用于存储返回的主机名。同样，如果wrWce非空，它指向一个长度为wrv/m字节的缓 冲区用于存储返回的服务名。
+参数斯指定一些转换的控制方式，表16-6总结了系统支持的标志。
+表16-6 getnameinfo函数标志
+知 志	描述
+NI_DGRAM NI一NAMEREQD NI_N0FQDN NI—NUMERICHOST NI_NUMERICSERV	服务基于数据报而非基于流 如果找不到主机名字，将其作为一个错误对待 对于本地主机，仅返回完全限定域名的节点名字部分 以数字形式而非名字返回主机地址 以数字形式而非名字返回服务地址(即端口号)
+程序清单16-1说明了函数getaddrinfo的使用方法。
+	程序清单16-1打印主机和服务倌息
+#	inc lude	’• apue . h"
+#include <netdb.h>
+#include	<arpa/inet.h>
+#if defined(BSD) || defined(MACOS)
+#include <sys/socket.h>
+#include	<netinet/in.h>
+#endif
+void
+print—family(struct addrinfo *aip)
+{ 一
+printf(" family ")； switch (aip->ai一family) { case AF一INET:
+printf("inet")； break； case AF一INET6：
+printf("inet6n)； break；
+
+ 
+printf("unix")； break? case AF一UNSPEC:
+printf("unspecified")； break; default:
+printf ( "unknown11)；
+printf{" type ");
+switch (aip->ai_socktype) {
+case SOCK 一STREAM:
+printf("stream")； break; case SOCK-DGRAM:
+printf("datagram"); break; case SOCK—SEQPACKET:
+printf("seqpacket”); break； case SOCK 一RAW:
+printf("raw"); break； default：
+printf(Hunknown (%d)n, aip->ai_socktype)
+void
+print_protocol(struct addrinfo *aip)
+printf(” protocol "); switch (aip->ai_protocol) { case 0：
+printf("default”)； break； case IPPROTO-TCP: printf("TCP");
+break； case IPPROTO一UDP: printf(ttUDPM); break; case IPPROTO—RAW: printf("raw")； break； default:
+printf(”unknown (%d)n, aip->ai—protocol)
+void
+print_flags(struct addrinfo *aip)
+void
+print一type(struct addrinfo ♦aip)
+printf("flags")； if (aip->ai_flags == 0) printf<" 0");
+
+ 
+448 第16章网络IPC:套接字
+else
+if
+if
+if
+(aip->ai_flags & AI_PASSIVE)
+printf《” passive");
+(aip->ai_flags & Xl_CANONNAME)
+printf《"canon");
+<aip->ai—flags & AI—NUMERICHOST)
+printf(" numhost");
+#if defined(AI_NUMERICSERV)
+if (aip->ai_flags & AI一 NUMERICSERV)
+printfnumserv");
+#endif
+#if defined(AI—V4MAPPED)
+if (aip->ai_flags & AI一 V4MAPPED)
+printf (,• v4mapped”)；
+#endif
+#if defined(AI_ALL)
+if (aip->ai一flags & AI^ALL)
+printf(" all");
+#endif
+int
+main(int argc, char *argv[])
+struct addrinfo struct addrinfo struct sockaddr_ const char int
+char
+★ailist, *aip;
+hint;
+in *sinp;
+*addr；
+err;
+abuf tINET ADDRSTRLEN]
+if (argc != 3)
+err_quit(”usage: %s nodename service”， argv[0])； hint.ai_flags = AI_CANONNAME； hint♦ai_family = 0; hint.ai_socktype = 0; hint.ai一protocol = 0; hint. ai__addrlen a 0; hint.ai一canonname = NULL； hint.ai_addr = NULL; hint.ai一next = NULL;
+if ((err = getaddrinfo(argv[1], argv[2], &hint, &ailist)) != 0) err_quit("getaddrinfo error： %s", gai一strerror(err)); for (aip = ailist; aip != NULL; aip = aip->ai_next) { print_f lags (atip)； print 一 family (aip); print_type (aip)； print_protocbl(aip)；
+printf(M\n\thost %sn, aip->ai一canonname?aip->ai_canonname_ if (aip->ai一family =- AF_INET) {
+sinp = (struct sockaddr_in *)aip->ai一addr; addr i net一n top (AF 一 I NET, &sinp->sin_addr, abuf,
+inet_addrstrlen7；	一
+printf(" address %sM, addr?addr："unknown")； printf(" port %dn, ntohs(sinp->sin一port));
+}
+printf(”\n”)；
+exit(0)
+
+ 
+16.3 寻址 449
+这个程序说明了函数getaddrinfo的使用方法。如果有多个协议为指定的主机提供相应 的服务，程序会打印出超过一条的信息。本例中，仅仅打印工作在IPv4 (ai_family为 AF_INET)上协议的地址信息。如果想将输出限制在AF_INET协议族，可以在hint中设置 ai_family 字段。
+程序在某个测试系统上运行时，得到了如下输出：
+$ ./a.out harry nfs
+flags canon family inet type stream protocol TCP host harry address 192.168.1.105 port 2049 flags canon family inet type datagram protocol UDP
+host harry address 192.168.1.105 port 2049	口
+16.3.4将套接字与地址绑定
+与客户端的套接字关联的地址没有太大意义，可以让系统选一个默认的地址。然而，对于服 务器，需要给一个接收客户端请求的套接字绑定一个众所周知的地址。客户端应有一种方法来发 现用以连接服务器的地址，最简单的方法就是为服务器保留一个地址并且在/etc/services或 者某个名字服务(name service)中注册。
+可以用bind函数将地址绑定到一个套接字。
+#include <sys/socket.h>
+int bind (int sockfd, const struct sockaddr *addr, socklen一t len)；
+返回值：若成功则返回0，若出错则返回-1
+对于所能使用的地址有一些限制：
+•在进程所运行的机器上，指定的地址必须有效，不能指定一个其他机器的地址。
+•地址必须和创建套接字时的地址族所支持的格式相匹配。
+•端口号必须不小于1024，除非该进程具有相应的特权(即为超级用户)。
+•一般只有套接字端点能够与地址绑定，尽管有些协议允许多重绑定。
+对于因特网域，如果指定IP地址为INADDR_ANY,套接字端点可以被绑定到所有的系统 网络接口。这意味着可以收到这个系统所安装的所有网卡的数据包。在下一节中将看到，如 果调用connect或listen,但没有绑定地址到一个套接字，系统会选一个地址并将其绑定到 套接字。
+可以调用函数getsockname来发现绑定到一个套接字的地址。
+#include <sys/socket.h>	
+int getsockname (int sockfd, struct sockaddr	★restrict addr,
+socklen—t ^restrict alenp)；	
+	返回值：若成功则返回0，若出错则返回-1
+调用getsockname之前，设置为一个指向整数的指针，该整数指定缓冲区sockaddr的 大小。返回时，该整数会被设置成返回地址的大小。如果该地址和提供的缓冲区长度不匹配, 则将其截断而不报错。如果当前没有绑定到该套接字的地址，其结果没有定义。
+如果套接字已经和对方连接，调用getpeername来找到对方的地址。
+國
+
+ 
+450 第16章网络IPC:套接字
+#include <sys/socket.h>
+int getpeername (int sochfd, struct sockaddr ^restrict addr, socklen—t * restrict alenp) ?
+返回值：若成功则返回0,若出错则返回-1
+除了还会返回对方的地址之外，函数getpeername和getsockname—样。
+16.4建立连接
+如果处理的是面向连接的网络服务(SOCK_STREAM或SOCK_SEQPACKET)，在开始交换 数据以前，需要在请求服务的进程套接字(客户端)和提供服务的进程套接字(服务器)之间 建立一个连接。可以用connect建立一个连接。
+#include <sys/socket,h>
+int connect (int sockfd, const struct sockaddr *addr, socklen一t len);
+返回值：若成功则返回0,若出错则返回-1
+在connect中所指定的地址是想与之通信的服务器地址。如果没有绑定到一个地址， connec t会给调用者绑定一■个默认地址。
+当连接一个服务器时，出于一些原因，连接可能失败。要连接的机器必须开启并且正在运 行，服务器必须绑定到一个想与之连接的地址，并且在服务器的等待连接队列中应有足够的空 间(马上将学到这一点)。因此，应用程序必须能够处理connect返回的错误，这些错误可能 由一些瞬时变化条件引起。
+程序清单16-2显示了一种如何处理瞬时connect错误的方法。这在一个负载很重的服务器 上很有可能发生。
+	程序清单16-2支持重试的连接	
+#include "apue.h"
+#include <sys/socket.h>
+#define MAXSLEEP 128
+int
+connect_retry(int sockfd, const struct sockaddr *addr/ socklen—t alen) int nsec；
+*	Try to connect with exponential backoff.
+V
+for (nsec = 1； nsec <= MAXSLEEP； nsec <<= 1) { if (connect(sockfd, addr, alen) == 0) { h
+*	Connection accepted, return(0) ; • *
+ 
+
+ 
+16.4建立连接 451
+*	Delay before trying again.
+*/
+if (nsec <= MAXSLEEP/2) sleep(nsec)；
+}
+return(-1)；
+	}	
+这个函数使用了名为指致补偿(exponential backoff)的算法。如果调用connect失败，进 程就休眠一小段时间然后再尝试，每循环一次增加每次尝试的延迟，直到最大延迟为2分钟。□ _
+如果套接字描述符处于将要在16.8节讨论的非阻塞模式下，那么在连接不能马上建立时， connect将会返回-1,并且将errno设为特殊的错误码EINPROGRESS。应用程序可以使用 poll或者select来判断文件描述符何时可写。如果可写，连接完成。
+函数connect还可以用于无连接的网络服务(SOCK_DGRAM)。这看起来有点矛盾，实际 上却是一个不错的选择。如果在SOCK_DGRAM套接字上调用connect,所有发送报文的目标地 址设为connect调用中所指定的地址，这样每次传送报文时就不需要再提供地址。另外，仅能 接收来自指定地址的报文。
+服务器调用listen来宣告可以接受连接请求。
+#include <sys/socket.h>	
+int listen (int sockfd• int backlog)；	
+	返回值：若成功则返回0，若出错则返回-1
+参数bac/Uog提供了一个提示，用于表示该进程所要入队的连接请求数量。其实际值由系统决定， 但上限S<sys/socket .h;^SOMAXCONN指定。
+Solaris系统忽略<8>^/300]^1:上>中的SOMAXCONN值，具体的上限依赖于每个协议的实现。对于 TCP,其默认值为128。
+一旦队列满，系统会拒绝多余连接请求，所以的值应该基于服务器期望负载和接受 连接请求与启动服务的处理能力来选择。
+一旦服务器调用了listen,套接字就能接收连接请求。使用函数accept获得连接请求并 建立连接。
+#include <sys/socket.h>
+int accept (int sockfd• struct sockaddr *restrict addr, socklen—t * restrict len)；
+返回值：若成功则返回文件(套接字)描述符.若出错则返回-1
+函数accept所返回的文件描述符是套接字描述符，该描述符连接到调用connect的客户端。
+这个新的套接子描述符和原始套接字(sockfd)具有相同的套接字类型和地址族。传给accept 的原始套接字没有关联到这个连接，而是继续保持可用状态并接受其他连接请求。
+如果不关心客户端标识，可以将参数•和设为NULL;否则，在调用accept之前，应 将参数arfrfr设为足够大的缓冲区来存放地址，并且将/«!设为指向代表这个缓冲区大小的整数的_ 指针。返回时，accept会在缓冲区填充客户端的地址并且更新指针所指向的整数为该地址
+
+ 
+452 第16章网络IPC:套接字
+的大小。
+如果没有连接请求等待处理，accept会阻塞直到一个请求到来。如果■wdyy处于非阻塞模 式，accept会返回-1 并将errno设置为EAGAIN或EWOULDBLOCK。
+本文所讨论的所有平台将EAGAIN定义为与EWOULDBLOCK相同。
+如果服务器调用accept并且当前没有连接请求，服务器会阻塞直到一个请求到来。另外， 服务器可以使用poll或select来等待一个请求的到来。在这种情况下，一个带等待处理的连 接请求套接字会以可读的方式出现。
+寒例
+程序清单16-3显示了一个服务器进程用以分配和初始化套接字的函数。
+	程序清单16-3服务器初始化套接字端点	
+#include "apue.h"
+#include <errno.h>
+#include <sys/socket.h>
+int
+initserver(int type, const struct sockaddr *addr, socklen t alen int qlen)	一	1
+{
+int fd； int err = 0；
+if ((fd = socket(addr->sa_family# type, 0)) < o) return(-1)； if (bind(fd, addr, alen) < 0) { err = errno； goto errout；
+}
+if (type == SOCK_STREAM || type == SOCK_SEQPACKET) { if (listen(fd, qlen) < 0) { err = errno； goto errout；
+}
+}
+return(fd)?
+errout：
+close(fd)； errno = err； return(-1)；
+我们将会看到，TCP关于地址复用有一些奇怪的规则，导致这个例子并不完备。程序清 单16-9显示了有关这个函数的另一个版本，该版本可以绕过这些规则，解决眼下版本的主要 缺陷。	□
+16.5数据传输
+既然将套接字端点表示为文件描述符，那么只要建立连接，就可以使用read和write来
+
+ 
+16.5数据传输 453
+通过套接字通信。回忆前面所讲，通过在connect函数里面设置对方地址，数据报套接字也可 以“连接”。在套接字描述符上采用read和write是非常有意义的，因为可以传递套接字描述 符到那些原先设计为处理本地文件的函数。而且可以安排传递套接字描述符到执行程序的子进 程，该子进程并不了解套接字。
+尽管可以通过read和write交换数据，但这就是这两个函数所能做的一切。如果想指定 选项、从多个客户端接收数据包或者发送带外数据，需要采用六个传递数据的套接字函数中的 一个。
+三个函数用来发送数据，三个用于接受数据。首先，考查用于发送数据的函数。
+最简单的是send,它和write很像，但是可以指定标志来改变处理传输数据的方式。
+#include <sys/socket.h>
+ssize_t send (int sockfd, const void *buf, size_t nbytes, int flags);
+返回值：若成功则返回发送的字节数，若出错则返回-1
+类似write,使用send时套接字必须已经连接。参数与write中的含义一致。
+然而，与write不同的是，send支持第四个参数/Zap。两个标志是Single UNIX Specification规定的，但是其他标志通常实现也支持。表16-7总结了这些标志。
+表16-7 send套接字调用标志
+标 志	描述	POSIX.I	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+MSG_DONTROUTE	勿将数据路由出本地网络		•		•	•
+MSG_DONTWAIT	允许非阻塞操作(等价于使用0一NONBLOCK)		•		•	
+MSG_E0R	如果协议支持，此为记录结束	•	•		•	
+MSG一00B	如果协议支持，发送带外数据(见16.7节)					
+如果send成功返回，并不必然表示连接另一端的进程接收数据。所保证的仅是当send成 功返回时，数据已经无错误地发送到网络上。
+对于支持为报文设限的协议，如果单个报文超过协议所支持的最大尺寸，send失败并将 errno设为EMSGSIZE,对于字节流协议，send会阻塞直到整个数据被传输。
+函数sendto和send很类似。区别在于sendto允许在无连接的套接字上指定一个目标 地址。
+#include <sys/socket.h>
+ssize_t sendto (int sockfd, const void *buf, size一t nbytes, int flags, const struct sockaddr *destaddr, socklen t destlen)；
+返回值：若成功则返回发送的字节数，若出错则返回-1
+对于面向连接的套接字，目标地址是忽略的，因为目标地址蕴涵在连接中。对于无连接的套接 字，不能使用send,除非在调用connect时预先设定了目标地址，或者采用sendto来提供另 外一种发送报文方式。
+可以使用不止一个的选择来通过套接字发送数据。可以调用带有msghdr结构的sendmsg 来指定多重缓冲区传输数据，这和writev很相像(14.7节)。
+
+ 
+454 第16幸网络IPC:套接字
+optional address */
+address size in bytes */
+array of I/O buffers */
+number of elements in array */
+ancillary data */
+number of ancillary bytes */
+flags for received message */
+struct msghdr { void
+socklen一t struct iovec int void
+socklen t int
+*msg一name; msg_namelen； *msg_iov; msg_iovlen;
+*msg一control; msg—controllen; msg_flags;
+#include <sys/socket.h>
+ssize一t sendmsg(int sockfd, const struct msghdr *msg, int flags)；
+返回值；若成功则返回发送的字节数，若出错则返回-1
+POSIX.1定义了msghdr结构，它至少应该有如下成员：
+在14.7节可以看到iovec结构。在17.4.2节中可以看到辅助数据的使用。
+函数recv和read很像，但是允许指定选项来控制如何接哗数据。
+#include <sys/socket,h>
+ssize_t recv (int sochfd, void *buf, size__t nbytes, int flags)；
+返回值：以字节计数的消息长度，若无可用消息或对方 已经按序结束则返回0，若出错则返回-1
+表16-8总结了这些标志。Single UNIX Specification只规定了三个标志。
+表16-8 recv套接字调用标志
+标 志	描述	POSIX. 1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+MSG_OOB	如果协议支持，接收带外数据(见16.7节)	•	•	•	•	•
+MSG PEEK	返回报文内容而不真正取走报文	•	•	•	•	•
+MSG一TRUNC	即使报文被截断，要求返回的是报文的实际长度			•		
+MSG_WAITALL	等待直到所有的数据可用(仅SOCK_STREAM>	•	•	•	•	參
+当指定MSG_PEEK标志时，可以查看下一个要读的数据但不会真正取走。当再次调用read 或recv函数时会返回刚才查看的数据。
+对于SOCK_STREAM套接字，接收的数据可以比请求的少。标志MSG_WAITALL阻止这种行 为，除非所需数据全部收到，recv函数才会返回。对于SOCK_DGRAM和SOCK_SEQPACKET套 接字，MSG_WAITALL标志没有改变什么行为，因为这些基于报文的套接字类型一次读取就返 回整个报文。
+如果发送者已经调用Shutdown (16.2节)来结束传输，或者网络协议支持默认的顺序关 闭并且发送端已经关闭，那么当所有的数据接收完毕后，recv返回0。
+如果有兴趣定位发送者，可以使用recvfrom来得到数据发送者的源地址。
+/*
+/*
+/*
+/*
+/*
+/*
+/*
+一 
+ 
+16.5数据传输 455
+#include <sys/socket.h>
+ssize_t recvf rom (int sockfd, void *restrict buf, sizet len, int flags,
+struct sockaddr *restrict addr, —	•
+socklen_t *restrict addrlen)；
+返回值：以字节计数的消息长度，若无可用消息或对方 		已经按序结束则返回0,若出错则返回-1
+如果非空，它将包含数据发送者的套接字端点地址。当调用recvfrom时，需要设置 参数指向一个包含所指的套接字缓冲区字节大小的整数。返回时，该整数设为该地 址的实际字节大小。
+因为可以获得发送者的地址，recvfrom通常用于无连接套接字。否则，recvfrom等同 于recv0
+为了将接收到的数据送入多个缓冲区(类似于readv (14.7节))，或者想接收辅助数据 (17.4.2节)，可以使用recvmsg。
+#include <sys/socket.h>
+ssize_t recvmsg (int sockfd, struct msghdr *msgf int flags)；
+返回值：以字节计数的消息长度，若无可用消息或对方 	已经按序结束则返回0，若出错则返回-1
+结构msghdr (在sendmsg中见过)被recvmsg用于指定接收数据的输入缓冲区。可以设置参 数加供来改变recvmsg的默认行为。返回时，msghdr结构中的msg_flags字段被设为所接收 数据的各种特征(进入recvmsg时msg_flags被忽略)。从recvmsg中返回的各种可能值总 结在表16-9中。可以在第17章中看见使用recvmsg的例子。
+表16-9从recvmsg中返回的msg__flags标志
+标 志	描述	P0SIX.1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+MSG 一 CTRUNC	控制数据被截断	•	•		•	
+MSG 一 DONTWAIT	recvmsg处于非阻塞模式					
+MSG 一EOR	接收到记录结束符	•	•		•	
+MSG 一OOB	接收到带外数据	•	-		•	
+MSG 一 TRUNC	-般数据被截断	•	•		•	
+实例：面向连接的客户端
+程序清单I6-4显示了一个客户端命令，该命令用于与服务器通信以获得系统命令uptime 的输出。该服务称为“remote uptime”(简称为“ruptime”)。
+程序清单16-4用于获取服务器uptime的客户端命令
+#include "apue.h"
+#include <netdb.h>
+#include <errno.h>
+#include <sys/socket.h>
+#define MAXADDRLEN 256
+
+ 
+456 第16幸网络IPC:套接字
+#define BUFLEN	128
+extern int connect—retry(int, const struct sockaddr *, socklen一t); void
+print^uptime(int sockfd)
+{ _
+int n;
+char buf[BUFLEN];
+while ((n = recv(sockfd, buf, BUFLEN, 0)) > 0) write(STDOUT_FILENO, buf, n)； if (n < 0)
+err_sys("recv error");
+int
+main(int argc, char {
+struct addrinfo struct addrinfo int
+*argv[])
+★ailist, *aip； hint;
+sockfd, err；
+if (argc != 2)
+err_quit(Musage: ruptime hostname"); hint.ai_flags = 0; hint.ai_family = 0 ? hint.ai一socktype = SOCK—STREAM; hint.ai_protocol = 0; hint.ai—addrlen = 0; hint.ai_canonname = NULL； hint.ai_addr = NULL; hint.ai一next : NULL;
+if {{err = getaddrinfo(argv[1], ”ruptime”， &hint, &ailist)) != 0) err一quit("getaddrinfo error： %s", gai一strerror(err)); for (aip - ailist? aip !* NULL； aip = aip->ai_next) {
+if ((sockfd = socket{aip->ai_family, SOCK_STREAM, 0)) < 0) err = errno;
+if (connect_retry(sockfd, aip->ai_addr, aip->ai—addrlen) < 0) { err = errno?
+} else {
+print一uptime(sockfd)； exit(0)?
+}
+}
+fprintf(stderr, "can't connect to %s： %s\n", argv[1], strerror(err))； exit(1)；
+这个程序连接服务器，读取服务器发送过来的字符串并将其打印到标准输出。既然使用 SOCK_STREAM套接字，就不能保证在一次recv调用中会读取整个字符串，所以需要重复调用 直到返回0。
+如果服务器支持多重网络接口或多重网络协议，函数getaddrinfo会返回不止一个候选 地址。轮流尝试每个地址，当找到一个允许连接到服务的地址时便可停止。使用程序清单16-2
+中connect_retry函数来与服务器建立连接。	□
+
+ 
+16.5教据传输 457
+实例：面向连接的服务器_
+程序清单16-5显示服务器程序，用来提供uptime命令到程序清单16-4的客户端程序的输出。 程序清单16-5提供系统uptime的服务器程序
+#include #include #include #include #include
+"apue.h"
+<netdb.h> <errno.h> <syslog.h> <sys/socket.h>
+#define BUFLEN 128 #define QLEN 10
+#ifndef HOST—NAME一 MAX #define HOST—NAME一 MAX 256 #endif
+extern int initserver(intf struct sockaddr *• socklen t, int) void
+serve(int sockfd)
+{
+int	clfd；
+FILE *fp；
+char buf[BUFLEN]；
+for (；?) {
+clfd = accept(sockfd, NULL, NULL); if (clfd < 0) {
+syslog(LOG一ERR, "ruptimed： accept error： %s", strerror(errno))； exit(1);
+}
+if ( (fp = popen("/usr/t>in/uptime", "r")) == NULL) { sprintf(buf# "error： %s\n", strerror(errno))； send(clfd, buf, strlen(buf), 0)；
+} else {
+while (fgets(buf, BUFLEN, fp) !二 NULL) send(clfd, buf, strlen(buf), 0)； pclose(fp)；
+}
+close(clfd)；
+*aip;
+int
+main(int argc, char *argv[])
+{
+struct addrinfo *ailist,
+struct addrinfo hint;
+int	sockfd,
+char	*host
+if (argc != 1)
+err一quit("usage： ruptimed") #ifdef _SC_HOST_NAME_MAX
+n = sysconf(一SC 一 HOST—NAME一MAX); if (n < 0) /* best guess */ #endif
+
+ 
+458 第16章网络IPC:套接字
+n = HOST一NAME一MAX; host = malloc(n)； if (host == NULL)
+err 一sys("malloc error")； if (gethostname(host, n) < 0)
+err_sys (11 get hostname error")； daemonize("ruptimed")； hint.ai_flags = AI—CANONNAME; hint.ai_family = 0; hint-ai一socktype = SOCK_STREAM； hint.ai_protocol = 0; hint.ai_addrlen = 0; hint•ai一canonname = NULL； hint•ai一addr = NULL; hint.ai_next = NULL；
+if ((err = getaddrinfo (host # "ruptitne", &hint, fcailist)) 1= o) { syslog (LOG_ERR, 11 ruptimed： getaddrinfo error： %s", gai_strerror(err))； exit(1)；
+}
+for (aip = ailist； aip !=： NULL； aip = aip->ai一next) { if ((sockfd = initserver(SOCK_STREAMf aip~>ai_addr, a ip->a i_addr1en, QLEn)) >= 0) { serve(sockfd)； exit(0);
+exit(1)；
+为了找到地址，服务器程序需要获得其运行时的主机名字。一些系统不定A_SC_HOST— NAME一MAX常量，因此这种情况下使用HOST_NAME_MAX。如果系统不定义H0ST_NAME—MAX, 就自己定义。POSIX.1规定该值的最小值1为255字节，不包括终结符，因此定义HOST_NAME_MAX 为256以包括终结符。
+通过调用gethostname,服务器程序获得主机名字，并查看远程uptime服务地址。可能
+会有多个地址返回，但简单地选择第一个来建立被动套接字端点。处理多个地址作为练习留给 读者。
+使用程序清单16-3的initserver函数来初始化套接字端点，在这个端点等待到来的连接 请求。(实际上，使用的是程序清单16-9的版本，当在16.6节中讨论套接字选项时，可以了解其 中的原因。)	n
+实例：另一个面向连接的服务器
+前面说过采用文件描述符来访问套接字是非常有意义的，因为允许程序对联网环境的网络 访问一无所知。程序清单16-6中显示的服务器程序版本显示了这一点。为了代替从uptime命 令中读取输出并发送到客户端，服务器安排uptime命令的标准输出和标准错误替换为连接到 客户端的套接字端点。
+1. POSIX要求主机名长度不小于_p0SIX_H0ST_NAME_MAX (该值不包括终结符为255,参见本书2.5节说
+明)。——译者注
+
+ 
+16.5数据传输 459
+程序清单16-6用于显示命令直接写到套接字的服务器程序
+"apue,hM <netdb.h>
+<errno.h>
+<syslog.h>
+<fcntl.h>
+<sys/socket.h>
+<sys/wait.h>
+#define QLEN 10
+#ifndef HOST一NAME_MAX #define HOST一NAME一MAX 256 #endif
+extern int initserver(int, struct sockaddr void
+serve(int sockfd)
+socklen
+int);
+int
+pid_t
+clfd,
+pid;
+status；
+for (;;) {
+clfd = accept(sockfd, NULL, NULL); if (clfd < 0) {
+syslog(LOG-ERR, "ruptimed： accept error: %sM strerror(errno)); exit(1)；
+if ((pid = fork()) < 0) {
+syslog(LOG-ERR, nruptimed: fork error： %s",
+strerror(errno))；
+exit(1)；
+} else if (pid == 0) { /* child */
+/*
+*	The parent called daemonize (Figure 13.1), so
+*	STDIN_FILENO, STDOOT_FILENO, and STDERR_FILENO
+*	are already open to /dev/null. Thus, the call to
+*	close doesnft need to be protected by checks that
+*	clfd isn/t already equal to one of these values.
+*/
+if (dup2(clfd, STDOUT_FILENO) != STDOUT一FILENO ||
+dup2(clfd, STDERR一FILENO) 1= STDERR—FILENO) {
+syslog(LOG—ERR, "ruptimed： unexpected errorM)；
+exit(1)；
+}
+close(clfd)；
+execl("/usr/bin/uptime"# "uptime", (char *)0)；
+syslog(LOG_ERR, "ruptimed： unexpected return from exec：
+strerror(errno))；
+} else {	/* parent */
+close(clfd)；
+waitpid(pid# ^status, 0);
+%s,_
+main(int argc, char *argv[])
+#mclude #include #include #include #include #include #include
+
+ 
+460 第16章网络IPC:套接字
+struct addrinfo *ailist/ *aip; struct addrinfo hint; int	sockfd, err, n;
+char	*host;
+if (argc != 1)
+err一quit("usage: ruptimed")；
+#ifdef 一SC一HOST一NAME_MAX
+n = sysconf(_SC_HOST_NAME_MAX)； if (n < 0) /* best guess */
+#endif
+n = HOST 一NAME_MAX; host * malloc(n); if (host == NULL)
+err_sys (11 malloc error"); if (gethostname(host, n) < 0)
+err_sys("gethostname error")；
+I573I	daemonize ("ruptimed")；
+hint•ai_flags = AI_CANONNAME；
+hint.ai_family = 0；
+hint.ai_socktype = SOCK 一STREAM;
+hint. ai__protocol = 0 ；
+hint.ai_addrlen = 0;
+hint.ai_canonname = NULL；
+hint.ai_addr = NULL；
+hint.ai一next = NULL；
+if ((err = getaddrinfo(host, "ruptime", &hint, &ailist)) 1= 0) { syslog(LOG 一ERR, "ruptimed: getaddrinfo error: %s", gai_strerror(err)); exit(1)；
+}
+for (aip = ailist; aip 1= NULL； aip = aip->ai_next) { if ((sockfd = initserver(SOCK_STREAM, aip->ai_addr, aip->ai__addrlen/ QLEN) ) >= 0) { serve(sockfd); exit(0)；
+}
+}
+exit(1);
+以前的方式是采用popen来运行uptime命令，并从连接到命令标准输出的管道读取输出， 现在采用fork来创建一个子进程，并使用dup2使子进程的STDIN—FILENO的副本打开到 、 /dev/null, STDOUT—FILENO和STDERI^FILENO打开到套接字端点。当执行uptime时， 命令将结果写到标准输出，该标准输出连到套接字，所以数据被送到ruptime客户端命令。
+父进程可以安全地关闭连接到客户端的文件描述符，因为子进程仍旧打开着。父进程等待 子进程处理完毕，所以子进程不会变成僵死进程。既然运行uptime花费时间不会太长，父进 程在接受下一个连接请求之前，可以等待子进程退出。不过，这种策略不适合子进程运行时间 比较长的情况。	□
+前面的例子采用面向连接的套接字。但如何选择合适的套接字类型？何时采用面向连接的 套接字，何时采用无连接的套接字呢？答案取决于要做的工作以及对错误的容忍程度。
+对于无连接套接字，数据包的到来可能已经没有次序，因此当所有的数据不能放在一个包 里时，在应用程序里面必须关心包的次序。包的最大尺寸是通信协议的特性。并且对于无连接 _套接字，包可能丢失。如果应用程序不能容忍这种丢失，必须使用面向连接的套接字。
+
+ 
+16.5数据传输 461
+容忍包丢失意味着两个选择。如果想和对方可靠通信，必须对数据包编号，如果发现包丢 失，则要求对方重新传输。既然包可能因延迟而疑似丢失，我们要求重传，但该包却又出现， 与重传过来的包重复。因此必须识别重复包，如果出现重复包，则将其丢弃。
+另外一个选择是通过让用户再次尝试命令来处理错误。对于简单的应用程序，这就足够， 但对于复杂的应用程序，这种处理方式通常不是可行的选择，一般在这种情况下使用面向连接 的套接字更为可取。
+面向连接的套接字的缺陷在于需要更多的时间和工作来建立一个连接，并且每个连接需要 从操作系统中消耗更多的资源。
+实例：无连接客户端
+程序清单16-7中的程序是采用数据报套接字接口的uptime客户端命令版本。
+	程序清单16-7采用数据报服务的客户端命令	
+#include "apue.h"
+#include <netdb.h>
+#include <errno.h>
+#include <sys/socket.h>
+#define BUFLEN	128
+#define TIMEOUT	20
+void
+sigalrm(int signo)
+void
+print_uptime(int sockfd, struct addrinfo *aip)
+{ _
+int n ;
+char buf[BUFLEN]; buf[0] = 0;
+if (sendto(sockfd, buf, 1, 0# aip->ai一addr, aip->ai__addrlen) < 0) err—sys("sendto error"); alarm(TIMEOUT)；
+if ((n = recvfrom(sockfd, buf, BUFLEN, 0, NULL, NULL)) < 0) { if (errno != EINTR) alarm(O)； err一sys("recv error")；
+} _ alarm(0)；
+write (STD0UT_FILEN0# buf, n);
+}
+int
+main(int argc, char *argv[])
+{
+struct addrinfo	*ailist, *aip；
+struct addrinfo hint; int	sockfd, err；
+struct sigaction sa;
+if (argc != 2)
+err一quit("usage： ruptime hostname")；
+
+ 
+462 第16章网络IPC:套接字
+sa.sa一 handler = sigalrm； sa.sa—flags - 0; sigemptyset(&sa.sa_mask)； if (sigaction(SIGALRM, &sa, NULL) < 0) err一sys("sigaction error")； hint.ai一flags = 0; hint.ai一family = 0; hint.ai一socktype = SOCK_DGRAM； hint.ai_protocol = 0; hint.ai_addrlen = 0； hint.ai_canonname = NULL； hint-ai—addr = NULL； hint.ai一next = NULL;
+if ( (err = getaddrinfo(argv[l] , "ruptime'1, &hint# &ailist) ) != 0) err一quit("getaddrinfo error: %s"# gai一日trerror(err));
+for (aip = ailist； aip != NULL; aip = aip->ai_next) {
+if ((sockfd = socket(aip->ai一family, SOCK_DGRAM, 0)) < 0) { err = ermo；
+} else {
+print_uptime(sockfd, aip)； exit(0)；
+fprintf(stderr, "can't contact %s： %s\n", argv[l], strerror(err))； exit(1)?
+除了为SIGALRM增加一个信号处理程序以外，基于数据报的客户端main函数和面向连接 的客户端中的类似。使用alarm函数来避免调用recvfrom时无限期阻塞。
+对于面向连接的协议，需要在交换数据前连接服务器。对于服务器来说，到来的连接请求 已经足够判断出所需提供给客户端的服务。但是对于基于数据报的协议，需要有一种方法来通 知服务器需要它提供服务。本例中，只是简单地给服务器发送1字节的消息。服务器接收后从 包中得到地址，并使用这个地址来发送响应消息。如果服务器提供多个服务，可以使用这个请 求消息来指示所需要的服务’但既然服务器只做一件事情，1字节消息的内容是无关紧要的。
+如果服务器不在运行状态，客户端调用recvfrom便会无限期阻塞。对于面向连接的例子， 如果服务器不运行，connect调用会失败。为了避免无限期阻塞，调用recvf rom之前设置警 告时钟。	□
+实例：无连接服务器
+程序清单16-8中的程序是数据报版本的uptime服务器程序。
+	程序清单16-8基于数据报提供系统uptime的服务器程序	
+#include "apue.h"
+^include <netdb.h>
+#include <errno.h>
+#include <syslog.h>
+#include <sys/socket.h>
+#define BUFLEN	128
+#define MAXADDRLEN 256
+
+ 
+16.5数据传输 463
+#ifndef HOST—NAME—MAX #define HOST~NAME~MAX 256 #endif
+extern int initserver(int, struct sockaddr void
+serve(int sockfd)
+socklen
+t
+I
+en
+1
+kEr r t c L a a n o I h h i s F c c
+for
+(；；){
+alen =
+if ( (n
+n;
+alen；
+*fp；
+buf[BUFLEN]; abuf[MAXADDRLEN].
+MAXADDRLEN;
+=recvfrom(sockfd, buf, BUFLEN, 0,
+(struct sockaddr *)abuf, &alen)) < 0) {
+syslog(LOG_ERR, "ruptimed： recvfrom error：
+strerror(errno))；
+exit(1)；
+%s
+if ((fp = popen("/usr/bin/uptime«, "r")) -= NULL) sprintf(buf, "error： %s\n", strerror(errno))； sendto(sockfd, buf, strlen (buf)f 0,
+(struct sockaddr *)abuf, alen)；
+} else {
+if (fgets(buf, BUFLEN, fp) != NULL)
+sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)abuf, alen)； pclose(fp);
+int
+main(int argc, char *argv[])
+struct addrinfo struct addrinfo int char
+*ailist
+hint;
+sockfd, err ★host;
+aip；
+n;
+if (argc != 1)
+err_quit ('• usage: ruptimed") #ifdef _SC_HOST_NAME_MAX
+n =~sysconfT_SC_HOST_NAME_MAX); if (n < 0) /* best guess */ #endif
+n = HOST—NAME一MAX; host = malloc(n); if (host == NULL)
+err一sys("malloc error”； if (gethostname(host, n) < 0) err_sys("gethostname error" daemonize("ruptimed"}; hint.ai_flags = AI_CANONNAME； hint.ai_family = 0; hint.ai_socktype = SOCK_DGRAM； hint.ai_protocol = 0 ?
+int)；
+
+ 
+464 第16幸网络IPC:套接字
+hint.ai_addrlen = 0; hint.ai_canonname = NULL； hint.ai一addr - NULL； hint.ai_next = NULL；
+if {(err = getaddrinfo(host, "ruptime", &hint, &ailist)) != 0) { syslog(LOG 一Err, hruptimed： getaddrinfo error： %sM, gai_strerror(err)); exit(1);
+}
+for (aip = ailist; aip != NULL； aip = aip->ai一next) { if ((sockfd = initserver(SOCK—DGRAM, aip->ai_addr, aip->ai_addrlen, 0)) >- 0) { serve(sockfd)； exit(0)；
+}
+}
+exit(1)；
+}
+服务器程序在recvfrom中阻塞等待服务请求。当一个请求到达时，保存请求者地址并使 用popen来运行uptime命令。采用sendto函数将输出发送到客户端，其目标地址就设为刚才 的请求者地址。	口
+16.6套接字选项
+套接字机制提供两个套接字选项接口来控制套接字行为。一个接口用来设置选项，另一个 接口允许查询一个选项的状态。可以获取或设置三种选项：
+(1)	通用选项，工作在所有套接字类型上。
+(2)	在套接字层次管理的选项，但是依赖于下层协议的支持。
+(3)	特定于某协议的选项，为每个协议所独有。
+Single UNIX Specification仅定义了套接字层的选项(上述三种选项中的前两种选项)。
+可以采用setsockopt函数来设置套接字选项。
+#include <sys/socket.h>		
+int setsockopt (int sockfd,	int level,	int option, const void *val,
+socklen—t	len)；	
+		返回值：若成功则返回0,若出错则返回-1
+参数ZeveZ标识了选项应用的协议。如果选项是通用的套接字层选项，/eve股置成S0L_S0CKET。 否则，Zeve股置成控制这个选项的协议号。例如，对于TCP选项，这是IPPR0T0_TCP,对于IP 选项，这是IPPR0T0_IP。表16-10总结了Single UNIX Specification所定义的通用套接字层的 选项。
+参数vd根据选项的不同指向一个数据结构或者一个整数。一些选项是on/off开关。如果整 数非零，那么选项被启用。如果整数为零，那么该选项被禁止。参数指定了vcj/指向的对象 的大小。
+可以使用getsockopt函数来发现选项的当前值。
+
+ 
+16.6套接字选项 465
+#include <sys/socket.h>	
+int getsockopt (int sockfd, int level, int option,	void *restrict ml,
+socklen_t * restrict lenp)；	
+	返回值：若成功则返回0，若出错则返回-1
+表16-10套接字选项
+选项	参数vfl/类型	描 述
+SO一 ACCEPTCONN	int	返回信息指示该套接字是否能监听(仅getsockopt)
+S0_BR0ADCAST	int	如果*val非零，广播数据包
+S0_DEBUG	int	如果*val非零，启用网络驱动调试功能
+SO-DONTROUTE	int	如果*val非零，绕过通常路由
+SO一ERROR	int	返回挂起的套接字错误并清除(仅getsockopt)
+SO一KEEPALIVE	int	如果*val非零，启用周期性keep〜alive消息
+SO一LINGER	struct linger	当有未发消息并且套接字关闭时，延迟时间
+SO一00BINLINE	int	如果*val非零，将带外数据放在普通数据中
+SO_RCVBUF	int	以字节为单位的接收缓冲区大小
+SO—RCVLOWAT	int	接收调用中返回的以字节为单位的最小数据量
+S0_RCVTIME0	struct timeval	套接字接收调用的超时值
+SO_REUSEADDR	int	如果*val非零，重用bind中的地址
+SO_SNDBUF	int	以字节为单位的发送缓冲区大小
+SO_SNDLOWAT	int	发送调用中以字节为单位的发送的最小数据量
+SO—SNDTIMEO	struct timeval	套接字发送调用的超时值
+SO一TYPE	int	标识套接字类型(仅getsockopt：〉
+注意到参数Ze叩是一个指向整数的指针。在调用getsockopt之前，设置该整数为复制选 项缓冲区的大小。如果实际的尺寸大于此值，选项会被截断而不报错,如果实际尺寸正好等于 或者小于此值，那么返回时将此值更新为实际尺寸。
+ 
+当服务器终止并尝试立即重启时，程序清单16-3中的函数不会正常工作。除非超时(这个 通常约为几分钟)，通常TCP的实现不允许绑定同一个地址。幸运的是套接字选项 SO_REUSEADDR允许越过这个限制，如程序清单16-9所示。
+	程序清单16-9采用地址复用初始化套接字端点	
+#include "apue.h"
+#include <errno.h>
+#include <sys/socket.h>
+int
+initserver(int type, const struct sockaddr *addr, socklen_t alen, int qlen)
+{
+int fd, err; int reuse = 1；
+if ((fd = socket(addr->sa_family, type, 0)) < 0) return(-1)；
+if (setsockopt(fd, S0L_S0CKET, SO—REUSEADDR, &reuse, sizeof(int)) < 0) { err = errno；
+
+ 
+466 第16幸网络IPC:套接字
+goto errout；
+if (bind(fd, addr, alen) err = errno； goto errout；
+0) {
+if (type == SOCK一STREAM if (listen(fd, qlen) err = errno; goto errout；
+}
+II
+type 0) {
+SOCK 一SEQPACKET) {
+return(fd)；
+errout：
+close(fd)； errno = err； return(-1)；
+为了启用SO_REUSEADDR选项，在setsockopt中vtiZ的参数设置为一个非零整数的地址。 设置Ze/i参数为va/所指的对象的大小。	□
+16.7	带外数据
+带外数据(Out-of-band data)是一些通信协议所支持的可选特征，允许更高优先级的数据 比普通数据优先传输。即使传输队列已经有数据，带外数据先行传输。TCP支持带外数据，但 是UDP不支持。套接字接口对带外数据的支持，很大程度受TCP带外数据具体实现的影响。
+TCP将带外数据称为“紧急”数据(“urgent” data)。TCP仅支持一个字节的紧急数据，但 是允许紧急数据在普通数据传递机制数据流之外传输。为了产生紧急数据，在三个send函数 中任何一个指定标志MSG_00B。如果带MSG_00B标志传输字节超过一个时，最后一个字节被 看作紧急数据字节。
+如果安排发生套接字信号，当接收到紧急数据时，那么发送信号SIGURG。在3.14节和 14.6.2节中，可以看到在fcntl中使用F_SET0WN命令来设置一个套接字的所有权。如果 fcntl中第三个参数为正值，么指定了进程ID,如果为非-1的负值，那么代表了进程组ID。 因此，通过调用以下函数，可以安排进程接收一个套接字的信号。
+fcntl(sockfd, F_SET0WN, pid);
+F_GET0WN命令可以用来获得当前套接字所有权。对于F_SET0WN命令，一个负值代表一 个进程组ID，一个正值代表进程ID。因此，调用
+owner = fcntl(sockfd, F_GET0WN/ 0);
+返回值owner,如果owner为正值，则owner等于配置为接受套接字信号的进程ID,如果 owner为负值，则其绝对值为接受套接字信号的进程组ID。
+TCP支持紧急标记(urgent mark)的概念：在普通数据流中紧急数据所在的位置。如果采 用套接字选项SO一00BINLINE，那么可以在普通数据中接收紧急数据。为帮助判断是否接收到 紧急标记，可以使用函数sockatmark。
+
+ 
+16.8非阻塞和异步I/O 467
+#include <sys/socket.h> int sockatmark (int sockfd);
+返回值：若在标记处则返回1，若没有在标记处则返回0,若出错则返回-1
+当下一个要读的字节在紧急标志所标识的位置时，sockatmark返回1。
+当带外数据出现在套接字读取队列时，select函数(14.5.1节)会返回一个文件描述符并 且拥有一个异常状态挂起。可以在普通数据流上接受紧急数据，或者在某个recv函数中采用 MSG_00B标志在其他队列数据之前接收紧急数据。TCP队列仅有一字节的紧急数据，如果在接 收当前的紧急数据字节之前又有新的紧急数据到来，那么当前的字节会被丢弃。
+16.8	非阻塞和异步I/O
+通常，recv函数没有数据可用时会阻塞等待。同样地，当套接字输出队列没有足够空间 来发送消息时函数send会阻塞。在套接字非阻塞模式下，行为会改变。在这种情况下，这些 函数不会阻塞而是失败，设置errno为EWOULDBLOCK或者EAGAIN。当这些发生时，可以使用 poll或select来判断何时能接收或者传输数据。
+在Single UNIX Specification中，其实时扩展包含对通用异步I/O机制的支持。套接字机制有 自己的方式来处理异步I/O,但是在Single UNIX Specification中没有标准化。一些文献把经典的 基于套接字的异步I/O机制称为“基于信号的I/O”，以区别于实时扩展中的异步I/O机制。
+在基于套接字的异步I/O中，当能够从套接字中读取数据，或者套接字写队列中的空间变得 可用时，可以安排发送信号SIGI0。通过两个步骤来使用异步I/O:
+(1)	建立套接字拥有者关系，信号可以被传送到合适的进程。
+(2)	通知套接字当I/O操作不会阻塞时发信号告知。
+可以使用三种方式来完成第一个步骤：
+(1)	在f	cntl使用F_SET0WN命令。
+(2)	在ioctl中使用FI0SET0WN命令。
+⑶在ioctl中使用SIOCSPGRP命令。
+要完成第二个步骤，有两个选择：
+(1)	在fcntl中使用F_SETFL命令并且启用文件标志0_ASYNC。
+(2)	在ioctl中使用FI0ASYNC。
+虽然有不少选择，但不是普遍得到支持。表16-11总结了本书讨论平台对这些选项的支持情 况。表中以•显示提供支持，以+显示支持依赖于特定的域。例如，在Linux上，UNIX域套接
+字不支持 FI0SET0WN 和 SIOCSPGRP0
+表16-11异步套接字I/O管理命令
+	机希IJ	POSIX.1	FreeBSD
+5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solaris
+9
+fcntl{fd.	F一SETOWN, pid)	•		•		•
+ioctl(fd,	FIOSETOWN, pid) •			十		•
+ioctl(fd,	SIOCSPGRP, pid)			十		•
+fcntl(fd, ioctl(fd,	F_SETFL, flags 10—ASYNC) FIOASYNC, &n);			•
+•		•
+
+ 
+468 第16幸网络IPC:套接字
+16.9小结
+在本章中，考查了ipc机制，这种机制允许一个进程与另外一个进程通信，无论是不同的机 器上还是同一机器中。讨论了套接字端点如何命名，在连接服务器时，如何发现所要用的地址。
+我们给出了采用无连接的套接字(例如，基于数据报)和面向连接套接字的客户端和服务 器的例子。简要讨论了异步和非阻塞的套接字i/o,以及用于管理套接字选项的接口。
+在下一章，将会考査一些高级IPC主题，包括在同一台机器上如何使用套接字传送文件描 國述符。
+习题
+16.1写一个程序判断系统的字节序。
+16.2写一个程序，在至少两种不同的平台上打印出所支持套接字的stat结构成员，并且描述 这些结果不同之处。
+16.3程序清单16-5中的程序提供仅单一端点的服务。修改这个程序，使其同时支持多个端点 的服务(毎个具有不同的地址)。
+16.4写一个客户端程序和一个服务端程序，返回指定主机上当前运行的进程数量。
+16.5在程序清单16-6的程序中，服务器等待子进程执行up time命令，子进程完成后退出，服 务器才接受下一个连接请求。重新设计服务器，使得为一个请求服务时并不耽误处理到 来的连接请求。
+16.6写两个库例程：一个在套接字上允许异步I/O, —个在套接字禁止异步I/O。使用表16-11 \M	来保证函数能够在所有平台上运行，并且支持尽可能多的套接字类型。
+
+ 
+

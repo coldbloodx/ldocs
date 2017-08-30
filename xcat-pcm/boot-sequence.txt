@@ -1,0 +1,175 @@
+boot sequence of a linux operation system.
+1. load hardware information from BIOS.
+2. POST -- power on self test
+3. get first boot device from BIOS(hdd, mobile usb device, network)
+4. load and run boot loader(grub, spfdisk, syslinux, pxelinux) from MBR in first boot device
+5. load kernel according to the configuration of boot loader
+6. kernel check and test hardware (again) and load hardware drivers
+7. after all drivers are loaded, kernel will invoke init according to run level information(inittab)
+8. init invoke /etc/rc.d/rc.sysinit to initialize software execution environment, eg(network, timezone)
+9. init start all services according ot /etc/rc.(runlevel)/
+10. init invoke /etc/rc.d/rc.local
+11. init run mingetty to start login process, and wait for user login
+
+
+BIOS and CMOS
+
+BIOS: Basic Input/Output System
+
+All content of BIOS are stored in a flash ROM on motherboard. It can be divided into following parts:
+1. basic input and output programs
+2. system infomation settings interface(TUI)
+3. power on self test programs(POST)
+4. system start up and self test programs
+
+And above programs and interface offer some management functions, following are most important.
+1. BIOS interruption service
+2. BIOS settings program
+3. BIOS POST program
+4. BIOS system startup program
+
+1. BIOS Interruption Service
+BIOS Interruption Service is a programable interface for software and hardware in operation system, which is a bridge between applications and hardwares. All peripherals management  instructions, like HDD, CDROM, keyboard, monitor, in opteration system are based on BIOS interrupition service. And users can also trigger interruption eg: INT 5, INT 13 to invoke interruption handler.
+
+2. BIOS settings program
+All components configuration of computer are stored in a RAM(COMS), which holds some basic system information like CPU features, floppy disk dirve, monitor, keyboard etc. And BIOS settings program is a TUI application to manage value in CMOS.
+
+3. POST program
+When the computer is powered on, POST program will check all system devices, which includes CPU, basic memory(640K), extend memory(1M+), ROM, motherboard, CMOS, serial port, parallel port, video card, floppy disk, hard drive disk and keyboard. Once errors occured, system will beep or show warning message to users.
+ 
+4. BIOS startup program
+After POST, BIOS will search boot record in boot device according to boot sequence stored in CMOS. If any boot record is found in above device, boot record will controll entire computer, and load operation system in boot device.
+
+BIOS与CMOS区别 
+
+在日常操作和维护计算机的过程中，常常可以听到有关BIOS设置和CMOS设置的一些说法，许多人对BIOS和CMOS经常混为一谈。本文主要阐述对BIOS设置和CMOS设置在基本概念上的区分与联系。 
+
+BIOS是什么? 
+
+所谓BIOS，实际上就是微机的基本输入输出系统（Basic Input－Output System），其内容集成在微机主板上的一个ROM芯片上，主要保存着有关微机系统最重要的基本输入输出程序，系统信息设置、开机上电自检程序和系统启动自举程序等。 
+
+BIOS的功用 
+
+BIOS ROM芯片不但可以在主板上看到，而且BIOS管理功能如何在很大程度上决定了主板性能是否优越。BIOS管理功能主要包括： 
+
+1． BIOS中断服务程序 
+
+BIOS中断服务程序实质上是微机系统中软件与硬件之间的一个可编程接口，主要用来在程序软件与微机硬件之间实现衔接。例如，DOS和Windows操作系统中对软盘、硬盘、光驱、键盘、显示器等外围设备的管理，都是直接建立在BIOS系统中断服务程序的基础上，而且操作人员也可以通过访问INT 5、INT 13等中断点而直接调用BIOS中断服务程序。 
+
+2．BIOS系统设置程序 
+
+微机部件配置记录是放在一块可读写的 CMOS RAM 芯片中的，主要保存着系统基本情况、CPU特性、软硬盘驱动器、显示器、键盘等部件的信息。在 BIOS ROM芯片中装有"系统设置程序"，主要用来设置CMOS RAM中的各项参数。这个程序在开机时按下某个特定键即可进入设置状态，并提供了良好的界面供操作人员使用。事实上，这个设置CMOS参数的过程，习惯上也称为" BIOS设置"。一旦CMOS RAM芯片中关于微机的配置信息不正确时，轻者会使得系统整体运行性能降低、软硬盘驱动器等部件不能识别，严重时就会由此引发一系统的软硬件故障。 
+
+3． POST上电自检 
+
+微机按通电源后，系统首先由POST（Power On Self Test,上电自检)程序来对内部各个设备进行检查。通常完整的POST自检将包括对 CPU、640K基本内存、 1M以上的扩展内存、ROM、主板、CMOS存贮器、串并口、显示卡、软硬盘子系统及键盘进行测试，一旦在自检中发现问题，系统将给出提示信息或鸣笛警告。 
+
+4． BIOS系统启动自举程序 
+
+系统在完成 POST自检后， ROM BIOS 就首先按照系统 CMOS设置中保存的启动顺序搜寻软硬盘驱动器及CD-ROM、网络服务器等有效地启动驱动器，读入操作系统引导记录，然后将系统控制权交给引导记录，并由引导记录来完成系统的顺利启动。 
+
+CMOS是什么? 
+
+CMOS(本意是指互补金属氧化物半导体存储嚣，是一种大规模应用于集成电路芯片制造的原料)是微机主板上的一块可读写的RAM芯片，主要用来保存当前系统的硬件配置和操作人员对某些参数的设定。CMOS RAM芯片由系统通过一块后备电池供电，因此无论是在关机状态中，还是遇到系统掉电情况，CMOS信息都不会丢失。 
+
+由于CMOS RAM芯片本身只是一块存储器，只具有保存数据的功能，所以对CMOS中各项参数的设定要通过专门的程序。早期的CMOS设置程序驻留在软盘上的(如IBM的PC/AT机型)，使用很不方便。现在多数厂家将CMOS设置程序做到了 BIOS芯片中，在开机时通过按下某个特定键就可进入CMOS设置程序而非常方便地对系统进行设置，因此这种CMOS设置又通常被叫做BIOS设置。 
+
+BIOS设置和CMOS设置的区别与联系 
+
+BIOS是主板上的一块EPROM或EEPROM芯片，里面装有系统的重要信息和设置系统参数的设置程序（BIOS Setup程序)；CMOS是主板上的一块可读写的RAM 芯片，里面装的是关于系统配置的具体参数，其内容可通过设置程序进行读写。CMOS RAM 芯片靠后备电池供电，即使系统掉电后信息也不会丢失。BIOS与CMOS既相关又不同：BIOS中的系统设置程序是完成CMOS参数设置的手段；CMOS RAM既是BIOS设定系统参数的存放场所，又是 BIOS设定系统参数的结果。因此，完整的说法应该是"通过BIOS设置程序对CMOS参数进行设置"。由于 BIOS和CMOS都跟系统设置密初相关，所以在实际使用过程中造成了BIOS设置和CMOS设置的说法，其实指的都是同一回事，但BIOS与CMOS却是两个完全不同的概念，千万不可搞混淆
+
+
+boot sequence of a linux operation system.
+1. load hardware information from BIOS.
+2. POST -- power on self test
+3. get first boot device from BIOS(hdd, mobile usb device, network)
+a. boot from local device (hdd, cdrom, mobile device). hdd(MBR, master boot record), cdrom(isolinux), mobile device(syslinux)
+b. boot from remote device (network) (pxelinux.0)
+
+4. load and run boot loader(grub, spfdisk, syslinux) from MBR in first boot device
+what is a bootloader?
+A boot loader is a computer program that loads the main operating system or runtime environment for the computer after completion of the self-tests.
+http://en.wikipedia.org/wiki/Booting
+
+common boot loaders:
+nt osloader: ntldr,boot.ini,NTDETECT.COM
+win2000/winxp/win2003
+
+bootmgr/bcdedit bootmgr is a .com file without .com suffix
+vista/win7/win8
+
+yaboot
+homepage:
+http://yaboot.ozlabs.org/
+git repository:
+http://git.ozlabs.org/?p=yaboot.git
+
+
+syslinux
+homepage:
+http://www.syslinux.org/wiki/index.php/The_Syslinux_Project
+source:
+git://git.kernel.org/pub/scm/boot/syslinux/syslinux.git
+two tools in syslinux 
+pxelinux
+isolinux
+
+lilo
+homepage:
+http://lilo.alioth.debian.org/
+source:
+http://anonscm.debian.org/git/lilo/lilo.git
+
+grub
+homepage:
+http://www.gnu.org/software/grub/index.html
+source: 
+http://bzr.savannah.gnu.org/r/grub/trunk/grub (Bazaar repo)
+
+grub4dos
+homepage:
+https://gna.org/projects/grub4dos/
+source:
+svn://svn.gna.org/svn/grub4dos/trunk
+
+fastboot protocol: android bootloaders
+homepage:
+https://android-dls.com/wiki/index.php?title=Fastboot
+source:none. depends on different mobile device manufacture
+
+
+5. load kernel according to the configuration of boot loader
+
+
+
+6. kernel check and test hardware (again) and load hardware drivers
+7. after all drivers are loaded, kernel will invoke init according to run level information(inittab)
+8. init invoke /etc/rc.d/rc.sysinit to initialize software execution environment, eg(network, timezone)
+9. init start all services according ot /etc/rc.(runlevel)/
+10. init invoke /etc/rc.d/rc.local
+11. init run mingetty to start login process, and wait for user login
+
+
+PXE的安装过程如下：
+
+1.目标主机通过PXE启动
+
+2.目标主机发送一个DHCP请求
+
+3.DHCP服务器给目标主机分配一个IP地址（可以是静态的IP也可以是动态的IP），同时告知目标主机TFTP服务器的地址
+
+4.目标主机收到返回的信息后会联系TFTP服务器，请求DHCP服务器告知他的文件（pxelinux.0）
+
+5.TFTP服务器会把启动目录发送给目标主机，目标主机按照需求执行不同的启动程序
+
+6.PXELINUX会在TFTP服务器上查找配置文件（默认的配置文件名为default），然后根据配置文件启动相应的kernel，在本例中将会加载kernel(vmlinuz)和ramdisk(initrd.img)
+
+7.目标主机会下载这两个文件，并加载
+
+8.目标主机开始安装
+
+9.安装程序读取PXE配置文件（ks.cfg）,按照配置文件中的脚本执行安装过程
+
+10.安装程序从HTTPD（或FTP或NFS或其他介质）上读取操作系统安装文件
+
+11.安装完成

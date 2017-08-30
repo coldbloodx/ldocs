@@ -1,0 +1,776 @@
+第11章
+线程
+11.1引言
+在前面的章节中讨论了进程，学习了UNIX进程的环境、进程间的关系以及控制进程的不 同方式。可以看出在相关的进程间能够存在一定的共享。
+本章将进一步深入考察进程，了解如何使用多个控制线程(或简称为线程)在单进程环境 中执行多个任务。一个进程中的所有线程都可以访问该进程的组成部件，如文件描述符和内存。
+无论何时，只要单个资源需要在多个用户间共享，就必须处理一致性问题。本章的最后将 讨论目前可用的同步机制，该机制用以防止多个线程査看到不一致的共享资源。
+11.2线程概念
+典型的UNIX进程可以看成只有一个控制线程：一个进程在同一时刻只做一件事情。有了 多个控制线程以后，在程序设计时可以把进程设计成在同一时刻能够做不止一件事，毎个线程 处理各自独立的任务。这种方法有很多好处。
+•通过为毎种事件类型的处理分配单独的线程，能够简化处理异步事件的代码。毎个线程 在进行事件处理时可以采用同步编程模式，同步编程模式要比异步编程模式简单得多。
+•多个进程必须使用操作系统提供的复杂机制才能实现内存和文件描述符的共享，这方面 的内容将在第15章和第17章中学习。而多个线程自动地可以访问相同的存储地址空间和 文件描述符。
+•有些问题可以通过将其分解从而改善整个程序的吞吐量。在只有一个控制线程的情况下， 单个进程需要完成多个任务时，实际上需要把这些任务串行化，有了多个控制线程，相 互独立的任务的处理就可以交叉进行，只需要为毎个任务分配一个单独的线程，当然只 有在处理过程互不依赖的情况下，两个任务的执行才可以穿插进行。
+•交互的程序同样可以通过使用多线程实现响应时间的改善，多线程可以把程序中处理用 户输入输出的部分与其他部分分开。
+有些人把多线程的程序设计与多处理器系统联系起来，但是即使程序运行在单处理器上， 也能得到多线程编程模型的好处。处理器的数量并不影响程序结构，所以不管处理器的个数是 多少，程序可以通过使用线程得以简化。而且，即使多线程程序在串行化任务时不得不阻塞， 由于某些线程在阻塞的时候还有另外一些线程可以运行，所以多线程程序在单处理器上运行仍 然能够改善响应时间和吞吐量。
+线程包含了表示进程内执行环境必需的信息，其中包括进程中标识线程的线程ID、一组寄 存器值、找、调度优先级和策略、信号屏蔽字、errno变量(见1.7节)以及线程私有数据(见
+[355]
+
+ 
+288 第11章线 程
+12.6节)。进程的所有信息对该进程的所有线程都是共享的，包括可执行的程序文本、程序的全 局内存和堆内存、栈以及文件描述符。
+我们将要讨论的线程接口来自POSIX.1-2001。线程接口(也称为“pthread”或“POSIX线 程”)在POSIX.1-2001中是一个可选特征。POSIX线程的特征测试宏是_E>OSIX_THREADS,应 用程序可以把这个宏用于#ifdef测试，以在编译时确定是否支持线程，也可以fc_SC_THREADS 常数用干调用sysconf函数，从而在运行时确定是否支持线程。
+11-3线程标识
+就像每个进程有一个进程1D—样，每个线程也有一个线程ID。进程ID在整个系统中是唯一 的，但线程ID不同，线程ID只在它所属的进程环境中有效。
+回忆一下进程ID，它用pid_t数据类型来表示，是一个非负整数。线程ID则用Pthread_t 数据类型来表示，实现的时候可以用一个结构来代表pthread_t数据类型，所以可移植的操作 系统实现不能把它作为整数处理。因此必须使用函数来对两个线程ID进行比较。
+#include <pthread.h>
+int pthread equal (pthread—t tidl, pthread一t tidl)；
+返回值：若相等则返回非0值，否则返回0
+Linux 2.4.22使用无符号长整型数表示pthread_t数据类型。Solaris 9把pthread_t^据类型表示为 无符号整数。FreeBSD 5.2.1和Mac OS X丨0.3用一个指向pthread结柃岣指针来表渌pthread_t数据类型。
+用结构表示pthread_t数据类型的后果是不能用一种可移植的方式打印该数据类型的值。 在程序调试过程中打印线程ID有时是非常有用的，而在其他情况下通常不需要打印线程ID，因 此有可能出现不可移植的调试代码，当然这也算不上是很大的局限性。
+线程可以通过调用pthread—sel f函数获得自身的线程ID。
+#include <pthread.h>	
+pthread一t pthread—self(void)；	返回值：调用线程的线程ID
+当线程需要识别以线程ID作为标识的数据结构时，pthread—self函数可以与 pthread一equal函数一起使用。例如，主线程可能把工作任务放在一个队列中，用线程ID来 控制每个工作线程处理哪些作业。如图11-1所示，主线程把新的作业放到一个工作队列中，由 三个工作线程组成的线程池从队列中移出作业，每个线程并不是任意地处理从队列顶端取出的 作业，而是由主线程控制作业的分配，生线程在每个待处理作业的结构中放置处理该作业的线 程ID,每个工作线程只能移出标有自己线程ID的作业。
+11.4线程的创建
+在传统的UNIX进程模型中，每个进程只有一个控制线程。从概念上讲，这与基干线程的 模型中每个进程只包含一个线程是相同的。在POSIX线程(pthread)的情况下，程序开始运行 时，它也是以单进程中的单个控制线程启动的，在创建多个控制线程以前，程序的行为与传统 的进程并没有什么区别。新增的线程可以通过调用pthread—create函数创建。
+
+ 
+11.4线程的创建 289
+ 
+图11-1工作队列实例
+ 
+#mclude <pthread.h>
+int pthread_create (pthread一t *restrict tidp,
+const pthread_attr_t *restrict attr, void * {* start_rtn) (void), void *restrict arg)
+返回值：若成功则返回0，否则返回错误编号
+國
+当pthread_create成功返回时，由指向的内存单元被设置为新创建线程的线程ID。 a»r参数用于定制各种不同的线程属性。线程属性将在12.3节中讨论，眼下暂时把它设置为 null,创建默认属性的线程。
+新创建的线程从函数的地址开始运行，该函数只有一个无类型指针参数arg，如果 需要向函数传递的参数不止一个，那么需要把这些参数放到一个结构中，然后把这个 结构的地址作为arg参数传入。
+线程创建时并不能保证哪个线程会先运行：是新创建的线程还是调用线程。新创建的线程 可以访问进程的地址空间，并且继承调用线程的浮点环境和信号屏蔽字，但是该线程的未决信 号集被清除。
+注意pthread函数在调用失败时通常会返回错误码，它们并不像其他的POSIX函数一样设 置errno。每个线程都提供errno的副本，这只是为了与使用errno的现有函数兼容。在线程 中，从函数中返回错误码更为清晰整洁，不需要依赖那些随着函数执行不断变化的全局状态， 因而可以把错误的范围限制在引起出错的函数中。
+虽然没有可移植的方法打印线程ID，但是可以写一个小的测试程序来完成这个任务，以便 更深入地了解线程是如何工作的。程序清单11-1中的程序创建了一个线程并且打印进程ID、新 线程的线程ID以及初始线程的线程ID。
+[358]
+ 
+
+ 
+290 第11幸线程
+	程序清单11-1打印线程ID	
+#include "apue.h"
+#include <pthread.h>
+pthread一t ntid;
+void
+printids(const char *s)
+pid—t pid? pthread_t tid;
+pid = getpid (); tid =* pthread_self ()；
+printf(H%s pid %u tid %u (0x%x)\nM, s, (unsigned intjpid, (unsigned int)tid# (unsigned int)tid)；
+}
+void *
+thr__fn (void *arg)
+{ _
+printids("new thread：")； return((void *)0)；
+}
+int
+main(void)
+int err；
+err = pthread_create(&ntid, NULL, thr 一fn, NULL); if (err !« 0)
+err一 quit{"can,t create thread： %s\nM, strerror(err))； printids("main thread：M)； sleep(1); exit(0)；
+这个实例有两个特别之处，需要处理主线程和新线程之间的竞争。(在本章后面的内容中 将学习如何更好地处理这种竞争)。首先是主线程需要休眠，如果主线程不休眠，它就可能退 出，这样在新线程有机会运行之前整个进程可能就已经终止了。这种行为特征依赖于操作系统 中的线程实现和调度算法。
+第二个特别之处在于新线程是通过调用Pthread_self函数获取自己的线程ID，而不是从 共享内存中读出或者从线程的启动例程中以参数的形式接收到。回忆Pthread_Create函数， _它会通过第一个参数{tidp、返回新建线程的线程ID。在本例里，主线程把新线程ID存放在 ntid中，但是新建的线程并不能安全地使用它，如果新线程在主线程调用pthread_ .create 返回之前就运行了，那么新线程看到的是未经初始化的ntid的内容，这个内容并不是正确的 线程ID。
+在Solaris上运行程序清单11-1中的程序，得到：
+$ ./a.out
+main thread： pid 7225 tid 1 (0x1) new thread： pid 7225 tid 4 (0x4)
+正如所料，两个线程的进程ID相同，但线程ID不同。在FreeBSD上运行程序清单11-1中的程序， 得到：
+
+ 
+11.5线程终止 291
+$ ./a.out
+main thread： pid 14954 tid 134529024 (0x804c000) new thread： pid 14954 tid 134530048 (0x804c400)
+正如所料，两个线程有相同的进程ID,如果把线程ID看成是十进制整数，线程ID的值看起来很 奇怪，但是如果把它们转化成十六进制，就变得有意义多了。就像前面所提及的，FreeBSD使 用指向线程数据结构的指针作为它的线程ID。
+我们期望Mac OS X与FreeBSD相似，主线程ID与新线程ID所指向的内存单元在相同的地址 范围内，但事实上，在Mac OS X中，主线程ID与用pthread—create新创建的线程ID所指向 的内存单元并不在相同的地址范围内：
+$ ./a.out
+main thread： pid 779 tid 2684396012 (OxaOOOalec) new thread： pid 779 tid 25166336 (0x1800200)
+相同的程序在Linux上运行得到的结果稍有不同：
+$ ./a.out
+new thread： pid 6628 tid 1026 (0x402) main thread： pid 6626 tid 1024 (0x400)
+Linux线程ID看起来更合理一些，但进程ID并不匹配。这与Linux的线程实现有关，Linux使用 clone系统调用来实现pthread_create。clone系统调用创建子进程，这个子进程可以共 享父进程一定数量的执行环境(如文件描述符和内存)，这个数量是可配置的。
+另外还需要注意，主线程的输出基本上出现在新建线程的输出之前，但Linux却不是这样 的，所以不能在线程调度上做出任何假设。	口
+11.5线程终止
+如果进程中的任一线程调用了exit, _Exit或者_exit，那么整个进程就会终止。与此 类似，如果信号的默认动作是终止进程，那么，把该信号发送到线程会终止整个进程(将在 12.8节中讨论信号与线程间的交互)。
+单个线程可以通过下列三种方式退出，在不终止整个进程的情况下停止它的控制流。
+(1)	线程只是从启动例程中返回，返回值是线程的退出码。
+(2)	线程可以被同一进程中的其他线程取消。
+(3)	线程调用pthread_exit。
+#include <pthread.h> void pthread_exit (void *rval_ptr)；
+rvaL^r是一个无类型指针，与传给启动例程的单个参数类似。进程中的其他线程可以通过调用
+pthread_j oin函数访问到这个指针。
+#include <pthread.h>
+int pthread_join (pthread_t thread, void **rval_ptr)；
+返回值：若成功则返回0，否则返回错误编号
+调用线程将一直阻塞，直到指定的线程调用Pthread_exit、从启动例程中返回或者被取消。
+
+ 
+292 第11幸线 程
+如果线程只是从它的启动例程返回，rva/_^r将包含返回码。如果线程被取消，由rvaU^r指定 的内存单元就置为PTHREAD_CANCELED。
+可以通过调用Pthread_j0in自动把线程置于分离状态(马上就会讨论到)，这样资源就 可以恢复。如果线程已经处于分离状态，pthread_join调用就会失败，返回EINVAL。
+如果对线程的返回值并不感兴趣，可以把rva/_/nr置为NULL。在这种情况下，调用 pthreatUoin函数将等待指定的线程终止，但并不获取线程的终止状态。
+程序清单11-2说明了如何获取已终止的线程的退出码。
+	程序澝单11-2获得线程退出状态	
+#include "apue.h"
+#include <pthread.h>
+void *
+thr一fnl(void *arg)
+{ 一
+printf ("thread 1 returning\n,t)； return((void *)l)；
+}
+void *
+thr_fn2(void *arg)
+{ _
+printf ('• thread 2 exiting\n")； pthread_exit((void *)2);
+} 一 int
+main(void)
+{
+int	err；
+pthread_t tidl, tid2; void	*tret；
+NULL, thr 一fnl, NULL〉；
+thread 1; %s\n", strerror(err))；
+NULL, thr fn2, NULL)；
+err = pthread_create(&tidl,
+if (err != 0)
+err_quit(Mcan,t create
+err = pthread_create(&tid2,
+if (err !« 0)
+err一 quit (11 can't create thread 2: %s\n" , strerror (err))；
+err = pthread_join(tidl, &tret)；
+if (err !« 0)
+err一quit("can't join with thread 1： %s\n", strerror(err))
+printf("thread 1 exit code %d\n"# (int)tret)；
+err = pthreadJ oin(t id2 # &tret)；
+if (err i* 0)
+err—quit("can#t join with thread 2: %s\n",
+printf("thread 2 exit code %d\nM, (int)tret)；
+exit(0)；
+strerror(err)),
+运行程序清单11-2中的程序，得到的结果是:
+$ ./«.out
+
+ 
+11.5线程终止 293
+=%d\n",	fp->a
+-%d\n",	fp->b
+=%d\n",	fp->c
+:%d\n",	fp->d
+structure at Ox%x\n"
+(unsigned)fp);
+printf(s) printf(" printf(tt printf(” printf(" printf (••
+thread 1 returning thread 2 exiting thread 1 exit code 1 thread 2 exit code 2
+可以看出，当一个线程通过调用Pthread_exit退出或者简单地从启动例程中返回时，进程中 的其他线程可以通过调用Pthread_j oin函数获得该线程的退出状态。	□
+pthread_create和pthread—exit函数的无类型指针参数能传递的数值可以不止一个， 该指针可以传递包含更复杂信息的结构的地址，但是注意这个结构所使用的内存在调用者完成 调用以后必须仍然是有效的，否则就会出现无效或非法内存访问。例如，在调用线程的栈上分 配了该结构，那么其他的线程在使用这个结构时内存内容可能已经改变了。又如，线程在自己 的栈上分配了一个结构然后把指向这个结构的指针传给Pthread_exit，那么当调用 pthreadjoin的线程试图使用该结构时，这个栈有可能已经被撤销，这块内存也已另作他用。
+ 
+程序清单11-3中的程序给出了用自动变量(分配在栈上)作为pthread_exit的参数时出 现的问题。
+	程序澝单11-3 Pthreaa_exit参数的不正确使用
+#	inc lude "apue.h11 #include <pthread.h>
+struct foo {
+int a, bf c, d；
+}-•
+void
+printfoo(const char *s, const struct foo *fp)
+void *
+thr 一fnl(void *arg)
+{ _
+struct foo foo = {1, 2, 3, 4}；
+printfoo("thread l:\n", &foo)； pthread_exit((void *)&foo)；
+} ' void *
+thr_fn2(void *arg)
+{ _
+printf("thread 2： ID is %d\n", pthread一self()); pthread_exit((void *)0);
+} _ int
+main(void)
+ 
+fo<
+fo<
+fo<
+fo<
+
+ 
+294 第11幸线程
+int	err；
+pthread-t tidl, tid2； struct foo *fp;
+err = pthread一create(&tidl, NULL, thr_fnl, NULL)； if (err != 0厂	_
+err—quit("can't create thread 1: %s\nH, strerror(err))； err - pthread_join(tidl, (void *)&fp)； if (err != 0)
+err_quit(Mcan/t join with thread 1: %s\n", strerror(err〉>; sleep(1)；
+printf("parent starting second thread\nw);
+err ~ pthread一create(&tid2, NULL, thr一fn2, NULL);
+if (err != 0)
+err_quit("can't create thread 2： %s\n", strerror(err))； sleep(l)；
+printfoo("parent:\nw• fp); exit(0);
+在Linux上运行此程序，得到
+$ ./a.out thread 1：
+structure at 0x409a2abc foo.a = 1 foo.b = 2 foo.c = 3 foo.d = 4 parent starting second thread thread 2: ID is 32770 parent：
+structure at 0x409a2abc foo.a = 0 foo.b = 32770 foo.c = 1075430560 foo.d = 1073937284
+当然，运行结果根据内存结构、编译器以及线程库的实现会有所不同。在FreeBSD上的结果 类似于
+$ ./a.out
+■ thread 1:
+structure at OxbfafefcO
+foo.a =	1
+foo.b =	2
+foo.c =	3
+foo.d =	4
+parent starting second thread
+thread 2：	ID is 134534144
+parent：	
+structure at OxbfafefcO
+foo.a =	0
+foo.b -	134534144
+foo.c =	3
+foo.d =	671642590
+可以看出，当主线程访问这个结构时，结构的内容(在线程的栈上分配)已经改变。注意 第二个线程(tid2)的栈是如何覆盖第一个线程的栈的。为了解决这个问题，可以使用全局结 构，或者用malloc函数分配结构。	□
+
+ 
+11.5线程终止 295
+线程可以通过调用pthread_CanCel函数来请求取消同一进程中的其他线程。
+#include <pthread.h>	
+int pthread_cancel (pthread_t tid)；	
+	返回值：若成功则返回0，否则返回错误编号
+在默认的情况下，Pthread_CanCel函数会使得由标识的线程的行为表现为如同调用了参 数为PTHREAD_CANCELED的pthread_exit函数，但是，线程可以选择忽略取消方式或是控 制取消方式。相关内容将在12_7节中详细讨论。注意pthread_cancel并不等待线程终止，它 仅仅提出请求。
+线程可以安排它退出时需要调用的函数，这与进程可以用atexit函数(见7.3节)安排进 程退出时需要调用的函数是类似的。这样的函数称为线程清理处理程序(thread cleanup handler)。 线程可以建立多个清理处理程序。处理程序记录在栈中，也就是说它们的执行顺序与它们注册 时的顺序相反。
+#include <pthread.h>
+void pthread_cleanup_push(void (*rtn) (void *) , void *arg); void pthread_cleanup_pop (int execute) ?
+当线程执行以下动作时调用清理函数，调用参数为aq，清理函数rm的调用顺序是由
+pthread_cleanup_push 函数来安排的。
+•调用 pthread_exit 时。
+•响应取消请求时。
+•用非零 execwie 参数调用 pthread_cleanup_pop 时。
+如果execwfe参数置为0,清理函数将不被调用。无论哪种情况，pthread—cleanup_pop 都将删除上次Pthread_cleanup_push调用建立的清理处理程序。
+这些函数有一个限制，由于它们可以实现为宏，所以必须在与线程相同的作用域中以匹配 对的形式使用，pthread_cleanup_push的宏定义可包含字符{，在这种情况下对应的匹配 字符}就要在pthread_cleanup_pop定义中出现。
+ 
+程序清单11-4显示了如何使用线程清理处理程序。虽然例子有人为编造之嫌，但说清楚了 其中涉及的清理机制。注意，虽然并未打算要传一个非零参数给线程启动例程，还是需要把
+pthread_cleanup_pop调用和pthread_cleanup_push调用匹配起来，否则，程序编译 可能通不过。
+	程序清单11-4线程清理处理程序	
+#	include 11 apue.h"
+#include <pthread.h>
+void
+cleanup(void *arg)
+{
+printf("cleanup： %s\n", (char *)arg)；
+
+ 
+296 第11章线程
+void *
+thr_fnl(void *arg)
+printf("thread 1 start\n”； pthread_cleanup_push(cleanup, "thread pthread_cleanup_push (cleanup, •' thread printf("thread 1 push complete\n"); if (arg)
+return((void *)1); pthread_c1eanup—pop(0); pthread一cleanup一pop(0)； return((void *) 1)；
+1 first handler")；
+1 second handler");
+void *
+thr fn2(void
+'arg)
+printf ("thread 2 start\n”；
+pthread_cleanup_push(cleanup, Mthread 2
+pthread_cleanup_push(cleanup, "thread 2
+printf("thread 2 push complete\nM)；
+if (arg)
+pthread_exit((void *)2)； pthread_cleanup_pop(0)； pthread__cleanup_pop (0); pthread_exit ((void *) 2)；
+first handler")； second handler")
+int
+main(void)
+int
+pthread_t
+void
+err；
+tidl, tid2；
+*tret;
+NULL, thr fnl, (void *)1),
+thread
+NULL,
+1： %s\n", thr fn2,
+strerror(err))； (void *)1)；
+err = pthread_create(&tidl,
+if (err ! = 0)
+err_quit (,,can# t create
+err = pthread一create(&tid2,
+if (err != 0)
+err_quit("can,t create
+err = pthread_join(tidl# &tret)；
+if (err != 0)
+err—quit("can't join with thread 1： %s\n", printf("thread 1 exit code %d\nn# (int)tret)； err = pthread_join(tid2, &tret)； if (err !二 0)
+err一quit("can,t join with thread 2： %s\nM/ strerror(err)), printf《"thread 2 exit code %d\nM, (int)tret); exit(0)；
+thread 2: %s\n", strerror(err))
+运行程序清单11-4中的程序会得到：
+$ ./a.out
+thread 1 start thread 1 push complete thread 2 start thread 2 push complete
+
+ 
+11.6线程同步 297
+cleanup: thread 2 second handler cleanup： thread 2 first handler thread 1 exit code 1 thread 2 exit code 2
+从输出结果可以看出，两个线程都正确地启动和退出了，但是只调用了第二个线程的清理 处理程序，所以如果线程是通过从它的启动例程中返回而终止的话，那么它的清理处理程序就 不会被调用，还要注意清理处理程序是按照与它们安装时相反的顺序被调用的。	□
+现在可以开始看出线程函数和进程函数之间的相似之处。表li-i总结了这些相似的函数-
+表11-1进程原语和线程原语的比较
+进程原语	线程原语	描述
+fork
+exit
+waitpid
+atexit
+getpid
+abort	pthread_create pthread一exit pthread_join pthread一cancel—push pthread_self pthread_cancel	创建新的控制流 从现有的控制流中退出 从控制流中得到退出状态 注册在退出控制流时调用的函数 获取控制流的ID 请求控制流的非正常退出
+在默认情况下，线程的终止状态会保存到对该线程调用口1匕1^3(1_；!0111，如果线程已经处 于分离状态，线程的底层存储资源可以在线程终止时立即被收回。当线程被分离时，并不能用 pthread_join函数等待它的终止状态。对分离状态的线程进行pthread_join的调用会产 生失败，返回EINVAL。pthread_detach调用可以用于使线程进入分离状态。
+#include <pthread.h>	
+int pthread一detach (pthread—t tid)；	
+	返回值：若成功则返回0，否则返回错误编号
+在下一章中，将学习通过对传给pthread_Create函数的线程属性进行修改，创建一个 已处于分离状态的线程。
+11.6线程同步
+当多个控制线程共享相同的内存时，需要确保每个线程看到一致的数据视图。如果每个线 程使用的变量都是其他线程不会读取或修改的，那么就不存在一致性问题。同样地，如果变量 是只读的，多个线程同时读取该变量也不会有一致性问题。但是，当某个线程可以修改变量， 而其他线程也可以读取或者修改这个变量的时候，就需要对这些线程进行同步，以确保它们在 访问变量的存储内容时不会访问到无效的数值。
+当一个线程修改变量时，其他线程在读取这个变量的值时就可能会看到不一致的数据。在 变量修改时间多于一个存储器访问周期的处理器结构中，当存储器读与存储器写这两个周期交 叉时，这种潜在的不一致性就会出现。当然，这种行为是与处理器结构相关的，但是可移植的 程序并不能对使用何种处理器结构做出假设。
+图11-2描述了两个线程读写相同变量的假设例子。在这个例子中，线程A读取变量然后给 这个变量赋予一个新的值，但写操作需要两个存储器周期。当线程B在这两个存储器写周期中 间读取这个相同的变量时，它就会得到不一致的值。
+
+ 
+298 第11幸线 程
+为了解决这个问题，线程不得不使用锁，在同一时间只允许一个线程访问该变量。图11-3 _描述了这种同步。如果线程B希望读取变量，它首先要获取锁，同样地，当线程A更新变量时, 也需要获取这把同样的锁。因而线程B在线程A释放锁以前不能读取变量。
+线程A	线程B
+线程A	线程B
+read
+时间
+write2
+ 
+read
+时间
+read
+writej
+read
+read
+图11-2两个线程的交叉存储器周期	图11-3两个线程同步内存访问
+当两个或多个线程试图在同一时间修改同一变量时，也需要进行同步。考虑变量递增操作 的情况(图11-4),增量操作通常可分为三步：
+(1)	从内存单元读入寄存器。	’
+(2)	在寄存器中进行变量值的增加。
+(3)	把新的值写回内存单元。
+线程A	线程B	i的内容
+读取:i放入寄存器 (registers 5)
+寄存器内容加1 (register = 6)
+读取i放入寄存器 (register = 5)
+时间
+把寄存器 内容写回i (register = 6)
+寄存器内容加1 (register = 6)
+把寄存器
+内容写回i	6
+(registers 6)
+图11-4两个非同步的线程对同一个变量做增量操作
+
+ 
+11.6线程同步 299
+如果两个线程试图在几乎同一时间对同一个变量做增量操作而不进行同步的话，结果就可 能出现不一致。变量可能比原来增加了 1,也有可能比原来增加了2，具体是1还是2取决于第二 个线程开始操作时获取的数值。如果第二个线程执行第一步要比第一个线程执行第三步早，第 二个线程读到的初始值就与第一个线程一样，它为变量加1,然后再写回去，事实上没有实际 的效果，总的来说变量只增加了 1。
+如果修改操作是原子操作，那么就不存在竞争。在前面的例子中，如果增加1只需要一个 存储器周期，那么就没有竞争存在。如果数据总是以顺序一致的方式出现，就不需要额外的同 步。当多个线程并不能观察到数据的不一致时，那么操作就是顺序一致的。在现代计算机系统 中，存储器访问需要多个总线周期，多处理器的总线周期通常在多个处理器上是交叉的，所以 无法保证数据是顺序一致的。	_
+在顺序一致的环境中，可以把数据修改操作解释为运行线程的顺序操作步骤。可以把这样 的情形描述为“线程A对变量增加了 1,然后线程B对变量增加了 1,所以变量的值比原来的大2”，
+或者描述为“线程B对变量增加了 1，然后线程A对变量增加了 1，所以变量的值比原来的大2”。
+这两个线程的任何操作顺序都不可能让变量出现除了上述值以外的其他数值。
+除了计算机体系结构的因素以外，程序使用变量的方式也会引起竞争，也会导致不一致的 情况发生。例如，可能会对某个变量加1,然后基于这个数值做出某种决定。增量操作这一步 和做出决定这一步两者的组合并非原子操作，因而给不一致情况的出现提供了可能。
+1.互斥置
+可以通过使用pthread的互斥接口保护数据，确保同一时间只有一个线程访问数据。互斥 量(mutex)从本质上说是一把锁，在访问共享资源前对互斥量进行加锁，在访问完成后释放 互斥量上的锁。对互斥量进行加锁以后，任何其他试图再次对互斥量加锁的线程将会被阻塞直	.
+到当前线程释放该互斥锁。如果释放互斥锁时有多个线程阻塞，所有在该互斥锁上的阻塞线程 都会变成可运行状态，第一个变为运行状态的线程可以对互斥量加锁，其他线程将会看到互斥_ ' 锁依然被锁住，只能回去再次等待它重新变为可用。在这种方式下，每次只有一个线程可以 向前执行。
+在设计时需要规定所有的线程必须遵守相同的数据访问规则，只有这样，互斥机制才能正 常工作。操作系统并不会做数据访问的串行化。如果允许其中的某个线程在没有得到锁的情况 下也可以访问共享资源，那么即使其他的线程在使用共享资源前都获取了锁，也还是会出现数 据不一致的问题。
+互斥变量用pthread_mutex_t数据类型来表示，在使用互斥变量以前，必须首先对它进 行初始化，可以把它置为常量PTHREAD_MUTEX_INITIALIZER (只对静态分配的互斥量)，
+也可以通过调用pthread_mutex_init函数进行初始化。如果动态地分配互斥量(例如通过 调用malloc函数)，那么在释放内存前需要调用pthread_mutex_destroy。
+#include <pthread.h>	
+int pthread_mutex_init(pthread一mutex一t *restrict
+const pthread—mutexattr_t	mutex,
+★restrict attr)；
+int pthread_mutex一 destroy (pthread_mutex 一 t * mutex)	
+返回值：若成功则返回0，否则返回错误编号
+要用默认的属性初始化互斥量，只需把am•设置为NULL。非默认的互斥董属性将在12.4节中
+
+ 
+300 第11幸线程
+讨论。
+对互斥量进行加锁，需要调用pthread_mutex_lOCk，如果互斥量已经上锁，调用线程 将阻塞直到互斥量被解锁。对互斥量解锁，需要调用pthread_mutex_unlock。
+#include <pthread.h>
+int pthread_mutex_lock(pthread_mutex_t *mutex)； int pthread一mutex—trylock (pthread一mutex一t * mutex); int pthread一mutex一unlock (pthread一mutex一 t * mutex) /
+返回值：若成功则返回0，否则返回错误编号
+如果线程不希望被阻塞，它可以使用pthread_mutex_t:ryloCk尝试对互斥量进行加锁。 如果调用9<：1^6 3(1_1111^6乂_1：^10 0)<；时互斥量处于未锁住状态，那么9比^3(1_1：11^6乂_ trylock将锁住互斥量，不会出现阻塞并返回0,否则pthread_mutex_trylock就会失败，不 能锁住互斥量，而返回EBUSY。
+程序清单11-5描述了用于保护某个数据结构的互斥量。当多个线程需要访问动态分配的对 象时，可以在对象中嵌入引用计数，确保在所有使用该对象的线程完成数据访问之前，该对象 内存空间不会被释放。
+	程序清单11-5使用互斥量保护数据结构	
+#include <stdlib.h>
+#include <pthread.h>
+struct foo {
+int	f_count;
+pthread一mutex_t f一lock;
+/* ... more stuff here ... */
+struct foo *
+foo_alloc(void) /* allocate the
+{ _
+struct foo *fp；
+object */
+if ((fp = malloc(sizeof(struct foo)}) != NULL) { fp->f__count = 1;
+if (pthread一mutex 一init(&fp->f—lock, NULL) != 0) { free(fp)； return(NULL);
+}
+/* ... continue initialization ... */
+}
+return(fp)；
+}
+void
+foo一hold(struct foo *fp) /* add a reference to the object */ { _
+pthread—mutex—lock(&fp->f_lock)； fp->f—count++；
+pthread_mutex_unlock(&fp->f_lock)；
+
+ 
+11.6线程同步 301
+void
+foo_rele(struct foo *fp) /* release a reference to the object */ { 一
+pthread_mutex_lock (&fp- >f_lock)； if (--fp->f—count == 0) { /* last reference */ pthread_mutex_unlock(&fp->f_lock)； pt hre ad_mut ex_de s t roy(& fp-> f_1ock)； free(fp)；
+} else {
+pthread一mutex—unlock(&fp->f_lock)；
+在对引用计数加1、减i以及检查引用计数是否为o这些操作之前需要锁住互斥量。在 foo_alloc函数将弓丨用计数初始化为1时没必要加锁，因为在这个操作之前分配线程是唯一引 用该对象的线程。但是在这之后如果要将该对象放到一个列表中，那么它就有可能被别的线程 发现，因此需要首先对它加锁。
+在使用该对象前，线程需要对这个对象的引用计数加1，当对象使用完毕时，需要对引用 计数减1。当最后一个引用被释放时，对象所占的内存空间就被释放。	口
+2.避免死锁
+如果线程试图对同一个互斥量加锁两次，那么它自身就会陷入死锁状态，使用互斥量时， 还有其他更不明显的方式也能产生死锁。例如，程序中使用多个互斥量时，如果允许一个线程 一直占有第一个互斥量，并且在试图锁住第二个互斥量时处于阻塞状态，但是拥有第二个互斥 量的线程也在试图锁住第一个互斥量，这时就会发生死锁。因为两个线程都在相互请求另一个 线程拥有的资源，.所以这两个线程都无法向前运行，于是就产生死锁。
+可以通过小心地控制互斥量加锁的顺序来避免死锁的发生。例如，假设需要对两个互斥量 A和B同时加锁，如果所有线程总是在对互斥量B加锁之前锁住互斥量A,那么使用这两个互斥 量不会产生死锁(当然在其他的资源上仍可能出现死锁)，类似地，如果所有的线程总是在锁 住互斥量A之前锁住互斥量B,那么也不会发生死锁。只有在一个线程试图以与另一个线程相 反的顺序锁住互斥量时，才可能出现死锁。
+有时候应用程序的结构使得对互斥量加锁进行排序是很困难的，如果涉及了太多的锁和数 据结构，可用的函数并不能把它转换成简单的层次，那么就需要采用另外的方法。可以先释 放占有的锁，然后过一段时间再试。这种情况可以使用pthread _mutex_trylock 接 口避免 死锁。如果已经占有某些锁而且pthread_mutex_trylock接口返回成功，那么就可以前 进；但是，如果不能获取锁，可以先释放已经占有的锁，做好清理工作，然后过一段时间重 新尝试。
+ 
+在这个例子中，我们修改了程序清单11-5，用以描述两个互斥量的使用方法(见程序清单 11-6)。当同时需要两个互斥量时，总是让它们以相同的顺序加锁，以避免死锁。第二个互斥量 维护着一个用于跟踪foo数据结构的散列列表。这样hashlock互斥量保护foo数据结构中的 fh散列表和£_11狀七散列链字段。foo结构中的£_10化互斥量保护对foo结构中的其他字段 的访问。
+
+ 
+302 第11幸线程
+程序清单11-6使用两个互斥量
+#include <stdlib.h>
+#include <pthread.h>
+#define NHASH 29
+#define HASH(fp) (((unsigned long)fp)%NHASH)
+struct foo *fh[NHASH]；
+pthreadjnutex_t hashlock = PTHREAD_MUTEX_INITIALIZER；
+struct foo {
+int	f—count;
+pthread_mutex_t lock;
+struct foo *f—next;
+int	f^id;
+/* ... more stuff here
+/* protected by hashlock */
+struct foo *
+foo一alloc(void)
+{ _
+struct foo
+int
+/* allocate the object */
+*fp；
+idx；
+if ((fp = malloc(sizeof(struct fp->f—count = 1； if (pthread-inuteX-init (&fp- free(fp)； return(NULL);
+foo))) != NULL) { >f_lock, NULL) != 0) {
+idx = HASH(fp);
+pthread_mutex_lock(&hashlock)； fp->f__next = fh[idx]； fh[idx] = fp->f_next; pthread_mutex_lock(&fp->f_lock)； pthread_mutex_unlock(&hashlock)； /* ... continue initialization .• pthread—mutex—unlock(&fp->f_lock) } ' ' ~ return(fp)；
+void
+foo_hold(struct foo *fp) /* add a reference to the object */
+pthread_mutex一lock(&fp->f_lock)； fp->f_count++;
+pthread一 mutex unlock(&fp->f lock)；
+} ~ ~ — struct foo *
+foo_find(int id) /* find an existing object */
+struct foo *fp； int	idx；
+idx = HASH(fp)；
+pthread_mutex_lock{&hashlock);
+for (fp = fh[idx]; fp != NULL; fp = fp->f—next) { if (fp->f_id id) {
+
+ 
+11.6线程同步 303
+foo_hold(fp); break;
+pthread_mutex_unlock(thashlock); return(fp);
+}
+void
+foo_rele(struct foo *fp) /* release a reference to the object */ { _
+struct foo *tfp； int	idx；
+pthread_mutex_lock(&fp->f_lock); if (fp->f_count 1) { /* last reference */ pthread_mutex_unlock(&fp->f_lock); pthread」nutex一lock(&hashlock)； pthread一mutex一lock(&fp->f_lock)；
+/* need to recheck the condition */ if (fp->f_count 丨=1) { fp->f—count--；
+pthread_mutex_unlock(&fp->f_lock)； pthread_mutex_unlock(&hashlock); return；
+}
+/* remove from list */ idx = HASH(fp); tfp = fhtidx]; if (tfp =- fp) {
+fhtidx] = fp->f_next;
+} else {
+while (tfp->f_next fp) tfp = tfp->f_next; tfp->f—next = fp->f_next；
+} ~ ~ pthread_mutex_unlock(&hashlock)； pthread__mutex_unlock (&fp- >f_lock); pthread_mutex 一destroy(&fp->f_lock); free(fp);
+} else {
+fp->f_count--;
+pthread_mutex_unlock(&fp->f—lock);
+比较程序清单11-6和程序清单11-5，可以看出分配函数现在锁住散列列表锁，把新的结构 添加到散列存储桶中，在对散列列表的锁解锁之前，先锁住新结构中的互斥量。因为新的结构 是放在全局列表中的，其他线程可以找到它，所以在完成初始化之前，需要阻塞其他试图访问 新结构的线程。
+foo_find函数锁住散列列表锁然后搜索被请求的结构。如果找到了，就增加其引用计数 并返回指向该结构的指针。注意加锁的顺序是先在foo_find函数中锁定散列列表锁，然后再 在foo_hold函数中锁定foo结构中的110^^互斥量。
+现在有了两个锁以后，foo_rele函数变得更加复杂。如果这是最后一个引用，因为将需 要从散列列表中删除这个结构，就要先对这个结构互斥量进行解锁，才可以获取散列列表锁。 然后重新获取结构互斥量。从上一次获得结构互斥量以来可能处于被阻塞状态，所以需要重新
+
+ 
+304 第11幸线 程
+检查条件，判断是否还需要释放这个结构。如果其他线程在我们为满足锁顺序而阻塞时发现了 这个结构并对其引用计数加1，那么只需要简单地对引用计数减1,对所有的东西解锁然后返回。
+如此加、解锁太复杂，所以需要重新审视原来的设计。也可以使用散列列表锁来保护结构 引用计数，使事情大大简化，结构互斥量可以用于保护foo结构中的其他任何东西。程序清单 11-7反应了这种变化。
+	程序清单11-7简化的加.解锁	
+#include <stdlib.h>
+#include <pthread.h>
+#define NHASH 29
+#define HASH(fp) (((unsigned long)fp)%NHASH) struct foo *fh[NHASH]；
+pthread一 mutex_t hashlock = PTHREAD_MUTEX_INITIALIZER； struct foo {
+int	f_count; /* protected by hashlock */
+pthread_mutex_t f_lock;
+struct foo int
+/* ... more
+struct foo *
+foo一alloc(void)
+{ 一
+struct foo
+int
+*f—next;
+Od；
+stuff here
+/* protected by hashlock */
+/* allocate the object */
+*fp；
+idx；
+if ((fp = malloc(sizeof(struct fp->f_count = 1； if (pthread一mutex 一init(&fp. free(fp)； return(NULL)；
+foo))) != NULL) { ■>f_lock, NULL) U 0) {
+idx = HASH(fp)；
+pthread—mutex一lock(&hashlock)； fp->f_next = fh[idx]; fh[idx] = fp->f—next; pthread—mutex_lock(&fp->f_lock)； pthread_mutex_unlock(&hashlock)； /* ... continue initialization ..
+}
+return(fp);
+void
+foo一hold(struct foo *fp) /* add a reference to the object */ {'
+pthread 一mutex一lock(&hashlock); fp->f_count++?
+pthread一 mutex—unlock(&hashlock);
+} 一 — struct foo *
+foo_find(int id) /* find a existing object */
+
+ 
+11.6线程同步 305
+}
+void
+foo
+struct foo *fp；
+int	idx；
+idx = HASH(fp)；
+pthread_mutex_lock(&hashlock);
+for (fp = fh[idx]； fp !: NULL； fp = fp->f_next) {
+if (fp->f_id == id) {
+fp->f_count++；
+break;
+}
+}
+pthread_mutex_unlock(&hashlock)； return(fp)；
+rele(struct foo *fp) /* release a reference to the object */
+struct foo *tfp;
+int	idx；
+pthread_mutex_lock(&hashlock)；
+if (--fp->f_count =- 0) { /* last reference, remove from list */
+idx = HASH(fp);
+tfp 二 fh[idx];
+if (tfp == fp) {
+fh[idx] = fp->f_next;
+} else {
+while (tfp->f_next != fp)
+tfp = tfp->f_next;
+tfp->f一next * fp->f_next;
+pthread」nutex一unlock(&hashlock)；
+pthread—mutex一destroy(&fp->f_lock)；
+free(fp);
+} else {
+pthread_mutex_unlock(&hashlock);
+} " ~
+注意’与程序清单11>6中的程序相比’程序清单11-7中的程序简单得多。两种用途使用相同的 锁时’围绕散列列表和引用计数的锁的排序问题就随之不见了。多线程的软件设计经常要考虑这 类折中处理方案。如果锁的粒度太粗，就会出现很多线程阻塞等待相同的锁，源自并发性的改善 微乎其微。如果锁的粒度太细’那么过多的锁开销会使系统性能受到影响，而且代码变得相当复 杂。作为一个程序员，需要在满足锁需求的情况下，在代码复杂性和优化性能之间找好平衡点。口
+3.	读写锁
+读写锁与互斥量类似，不过读写锁允许更髙的并行性。互斥量要么是锁住状态要么是不加 锁状态’而且一次只有一个线程可以对其加锁。读写锁可以有三种状态：读模式下加锁状态， 写模式下加锁状态’不加锁状态。一次只有一个线程可以占有写模式的读写锁，但是多个线程 可以同时占有读模式的读写锁。
+当读写锁是写加锁状态时，在这个锁被解锁之前，所有试图对这个锁加锁的线程都会被阻 塞。当读写锁在读加锁状态时’所有试图以读模式对它进行加锁的线程都可以得到访问权，但 是如果线程希望以写模式对此锁进行加锁，它必须阻塞直到所有的线程释放读锁。虽然读写锁 的实现各不相同’但当读写锁处于读模式锁住状态时，如果有另外的线程试图以写模式加锁，
+
+ 
+306 第11幸线 程
+读写锁通常会阻塞随后的读模式锁请求。这样可以避免读模式锁长期占用，而等待的写模式锁 请求一直得不到满足。
+读写锁非常适合于对数据结构读的次数远大于写的情况。当读写锁在写模式下时，它所保 护的数据结构就可以被安全地修改，因为当前只有一个线程可以在写模式下拥有这个锁。当读 写锁在读模式下时，只要线程获取了读模式下的读写锁，该锁所保护的数据结构可以被多个获 ^1]得读模式锁的线程读取。
+读写锁也叫做共享-独占锁，当读写锁以读模式锁住时，它是以共享模式锁住的，当它以 写模式锁住时，它是以独占模式锁住的。
+与互斥量一样，读写锁在使用之前必须初始化，在释放它们底层的内存前必须销毁。
+#include <pthread.h>
+int pthread_rwlock_init (pthread_rwlock_t *restrict rwlock,
+const pthread一rwlockattr一t ^restrict attr)； int p thr ead_rwlock一destroy (pthread 一 rwlock_t * rwlock);
+两者的返回值都是：若成功则返回0,否则返回错误编号
+读写锁通过调用pthread_rwlock_init进行初始化。如果希望读写锁有默认的属性，可以 传一个空指针给读写锁的属性将在12.4节中讨论。
+在释放读写锁占用的内存之前，需要调用pthread_rwlockjiestroy做清理工作。如果 pthread一rwlock一init为读写锁分配了资源，pthread_rwlock_destroy将释放这些资 源。如果在调用pthread_rwlock_destroy之前就释放了读写锁占用的内存空间，那么分配 给这个锁的资源就丢失了。
+要在读模式下锁定读写锁，需要调用pthread一rwlock_rdlock;要在写模式下锁定读写 锁，需要调用pthread_rwlock—wrlock。不管以何种方式锁住读写锁，都可以调用pthread— rwlock一unlock进行解锁0
+#include <pthread.h>
+int pthread一 rwlock_rdlock (pthread—rwlock—t * rwlock)； int pthread_rwlock_wrlock (pthread—rwlock 一 t * rwlock)； int pthread一rwlock一unlock (pthread一 rwlock一t * rwlock)；
+所有的返回值都是：若成功则返回0,否则返回错误编号
+在实现读写锁的时候可能会对共享模式下可获取的锁的数量进行限制，所以需要检查 pthread_rwlock_rdlock的返回值。即使pthread_rwlock_wrlock和 pthread_ rwlock—unlock有错误的返回值，如果锁设计合理的话，也不需要检查其返回值。错误返回 值的定义只是针对不正确地使用读写锁的情况，例如未经初始化的锁，或者试图获取已拥有的 锁从而可能产生死锁这样的错误返回等。
+Single UNIX Specification同样定义了有条件的读写锁原语的版本。
+固
+#include <pthread.h>
+int pthread_rwlock一 tryrdlock (pthread一rwlock_t * rwlock)；
+int pthread_rwlock_trywrlock (pthread_rwlock_t * rwlock)；
+两者的返回值都是：若成功则返回0,否则返回错误编号
+
+ 
+11.6线程同步 307
+可以获取锁时，函数返回0,否则，返回错误EBUSY。这些函数可以用于前面讨论的遵守 某种锁层次但还不能完全避免死锁的情况。
+ 
+程序清单11-8中的程序解释了读写锁的使用。作业请求队列由单个读写锁保护。这个例子 给出了图11-1的可能的一种实现，以此实现多个工作线程获取由单个主线程分配给它们的作业。
+	程序清单11-8使用读写锁	
+#include <stdlib.h>
+#include <pthread.h>
+struct job {
+struct job *j_next; struct job * j _prev;
+pthread—t j_id? /* tells which thread handles this job */
+/* ... more stuff here ... */
+}；
+struct queue {
+struct job	*q_head
+struct job	*q_tail
+pthread_rwlock__t q_lock
+*	Initialize a queue.
+*/
+int
+queue_init (struct queue *qp) { _
+int err；
+qp->q_head = NULL; qp->q_tail = NULL；
+err = pthread rwlock init(&qp->q lock, NULL); if (err != 0)
+return(err)；
+/* .•• continue initialization ... */
+return(0);
+*	Insert a job at the head of the queue.
+*/
+void
+job一insert(struct queue *qp, struct job *jp)
+{ _
+pthread_rwlock_wrlock(&qp->q_lock)； jp->j_next = qp->q_head； jp->j_prev = NULL; if (qp->q_head != NULL)
+qp->q_head->j_prev = jp；
+else
+qp->q_tail = jp; /* list was empty */ qp->g_head = jp?
+
+ 
+國
+308 第11幸线程
+pthread—rwlock-iinlock (&qp->q__lock)
+*	Append a job on the tail of the queue.
+*/
+void
+|ob一append(struct queue *qp, struct job *jp)
+pthread_rwlock_wrlock(&qp->q_lock)；
+jp-	>j一next = NULL；
+jp-	>j_prev = qp-	>q_tail
+if	(qp->q_tail i	=NULL)
+	qp->q_tail-5	-j_next
+else	
+	qp->q_head =	jp；
+qp-	>q_tail = jp；	
+s jP；
+/* list was empty */
+pthread—rwlock—unlock(&qp->q_lock)；
+} 一 "
+/*
+*	Remove the given job from a queue.
+*/
+void
+job_remove{struct queue *qp# struct job *jp)
+pthread_rwlock_wrlock(&qp->q_lock)；
+if (jp == qp->q_head) {
+qp->q_head = jp->j—next;
+if (qp->q_tail == jp)
+qp->q_tail ~ NULL；
+} else if (jp -- qp->q_tail) {
+qp->q_tail = jp->j_prev；
+if (qp->q__head == jp)
+qp->q_head = NULL；
+} else {
+jp->j_prev->j_next = jp->j_next；
+jp->j_next->j_prev = jp->j_prev；
+pthread_rwlock一unlock(&qp->q_lock)；
+/*
+*	Find a job for the given thread ID.
+*/
+struct job *
+job一find(struct queue *qp, pthread 一t id)
+{ 一 struct job *jp;
+if (pthread_rwlock_rdlock(&qp->q_lock) != 0) return(NULL)；
+for (jp = qp->q_head； jp i = NULL； jp = jp->j—next) if (pthread_equal(jp~>j_id, id)) break；
+pthread—rwlock一 unlock(&qp->q_lock)； return(jp)；	.
+
+ 
+11.6线程同步 309
+在这个例子中，不管什么时候需要增加一个作业到队列中或者从队列中删除作业，都用写 模式锁住队列的读写锁。不管何时搜索队列，首先需要获取读模式下的锁，允许所有的工作线 程并发地搜索队列。在这种情况下，只有线程搜索队列的频率远远高于增加或删除作业时，使 用读写锁才可能改善性能。
+工作线程只能从队列中读取与它们的线程ID匹配的作业。既然作业结构同一时间只能由一 个线程使用，所以不需要额外加锁。	口
+4.条件变置
+条件变量是线程可用的另一种同步机制。条件变量给多个线程提供了一个会合的场所。条 件变量与互斥量一起使用时，允许线程以无竞争的方式等待特定的条件发生。
+条件本身是由互斥量保护的。线程在改变条件状态前必须首先锁住互斥量，其他线程在获 得互斥量之前不会察觉到这种改变，因为必须锁定互斥量以后才能计算条件。
+条件变量使用之前必须首先进行初始化，pthread_COnd_t数据类型代表的条件变量可 以用两种方式进行初始化，可以把常量PTHREAD_COND_INITIALIZER陚给静态分配的条件 变量，但是如果条件变量是动态分配的，可以使用pthread_cond_init函数进行初始化。
+在释放底层的内存空间之前，可以使用pthread_mutex_destroy函数对条件变量进行 去除初始化(deinitialize) 0	[MU
+#include <pthread.h>
+int pthread一cond一init(pthread一cond一t *restrict cond,
+pthread_condattr_t ^restrict attr)；
+int pthread一cond_destroy(pthread_cond一t *cond)；
+两者的返回值都是：若成功则返回0，否则返回错误编号
+除非需要创建一个非默认属性的条件变量，否则pthread_cond_init函数的affr参数可以设 置为NULL,条件变量属性将在12.4节中讨论。
+使用pthread_cond_wait等待条件变为真，如果在给定的时间内条件不能满足，那么会 生成一个代表出错码的返回变量。
+#include <pthread.h>
+int pthread_cond_wait(pthread一cond 一t *restrict cond,
+pthread」nutex—t * re strict mutex)；
+int pthread_cond_timedwait(pthread_cond_t ^restrict cond,
+pthread一 mut eX-t * restrict mutex f const struct timespec ^restrict timeout)；
+两者的返回值都是：若成功则返回0，否则返回错误编号
+传递给pthread_COnd_wait的互斥量对条件进行保护，调用者把锁住的互斥量传给函数。函 数把调用线程放到等待条件的线程列表上，然后对互斥量解锁，这两个操作是原子操作。这样 就关闭了条件检查和线程进入休眠状态等待条件改变这两个操作之间的时间通道，这样线程就 不会错过条件的任何变化。pthread_cond_wait返回时，互斥量再次被锁住。
+pthread_cond_timedwait函数的工作方式与pthread_cond_wait函数相似，只是 多了一个rtweoMf。fiweoMf值指定了等待的时间，它是通过timespec结构指定。时间值用秒数
+
+ 
+310 第11章线程
+或者分秒数来表示，分秒数的单位是纳秒。 struct timespec {
+time—t tv 一sec; /* seconds */ long tv_neec； /* nanoseconds */
+}；
+使用这个结构时，需要指定愿意等待多长时间，时间值是一个绝对数而不是相对数。例如，如 果能等待3分钟’就需要把当前时间加上3分钟再转换到timespec结构，而不是把3分钟转换
+成timespec结构0
+可以使用getLimeofday (见6.10节)获取用timeval结构表示的当前时间，然后把这个 [3831时间转换成timespec结构。要得到timeout值的绝对时间，可以使用下面的函数：
+void
+maketimeout(struct timespec *tsp, long minutes)
+{
+struct timeval now；
+/* get the current time */ gettimeofday(&now)； tsp->tv 一sec = now.tv 一sec；
+tsp->tv—nsec : now.tv—usee * 1000; /* usee to nsec */
+/* add the offset to get timeout value */ tsp->tv—sec += minutes * 60；
+} —
+如果时间值到了但是条件还是没有出现，pthread一cond_timedwait将重新获取互斥量然后 返回错误ETIME：DOUT。从pthread_cond_wait或者pthread—cond_timedwait调用成功 返回时’线程需要重新计算条件’因为其他的线程可能已经在运行并改变了条件。
+有两个函数可以用于通知线程条件已经满足。pthread_cond一signal函数将唤醒等待 该条件的某个线程，而Pthread_cond_broadcast函数将唤醒等待该条件的所有线程。
+POSIX规范为了简化实现，允许pthread—cond一signal在实现的时候可以唤醛不止一个线程。
+#include <pthread.h>
+int pthread_cond_signal(pthread_cond_t *cond)； int pthread一cond一broadcast(pthread_cond—t *cond)； 	两者的返回值都是：若成功则返回0,否则返回错误编号
+调用f)thread_cond_signal或者pthread_cond_broadcast,也称为向线程或条件 发送信号。必须注意一定要在改变条件状态以后再给线程发送信号。
+实例
+程序清单11-9给出了如何结合使用条件变量和互斥量对线程进行同步。
+程序清单11-9使用条件变量
+#include <pthread.h> struct msg {
+
+ 
+11.7 小 结 311
+struct msg *m_next；
+/* …• more stuff here ♦.• */
+}；
+struct msg ★workq;
+pthread一cond_t qready = PTHREAD一COND—INITIALIZER;
+pthread一mutex_t qlock = PTHREAD_MUTEX_INITIALIZER；
+void
+process一msg (void)
+{ 一
+struct msg *mp；
+for (?；) {
+pthread 一mutex 一lock(&qlock)； while (workq == NULL)
+pthread—cond一wait Uqready, &qlock)； mp = workq； workq = mp->m_next； pthread一mutex 一unlock(&qlock)；
+/* now process the message mp */
+void
+enqueue—msg(struct msg *mp)
+{ 一
+pthread_mutex_lock(&qlock)； mp->m_next = workq; workq « mp；
+pthread一muteX-Unlock(&qlock)； pthread_cond_signal(&qready)；
+条件是工作队列的状态。用互斥量保护条件，在while循环中判断条件。把消息放到工作 队列时，需要占有互斥量，但向等待线程发送信号时并不需要占有互斥量。只要线程可以在调 用COnd_signal之前把消息从队列中拖出，就可以在释放互斥量以后再完成这部分工作。因 为是在while循环中检查条件，所以不会存在问题：线程醒来，发现队列仍为空，然后返回继 续等待。如果代码不能容忍这种竞争，就需要在向线程发送信号的时候占有互斥量。	口
+11.7小结
+在本章中，介绍了线程的概念，讨论了现有的创建线程和销毁线程的POSIX.1原语，此外 还介绍了线程同步问题，讨论了三种基本的同步机制：互斥、读写锁以及条件变量，了解了如 何使用它们来保护共享资源。
+习题
+11.1修改程序清单11-3中的例子，从而正确地在线程之间传递结构。
+11.2在程序清单11-8的例子中，需要另外添加什么同步(如果需要的话)才可以使得主线程改 变与未决作业关联的线程ID?这会对;j ob_remove函数产生什么影响？
+11.3把程序清单11-9中的技术运用到工作线程实例(图11-1和程序清单11-8)中，以实现工作 线程函数。不要忘记更新gueue_iriit函数对条件变量进行初始化，修改job_insert
+國
+[3851
+
+ 
+312 第11章线 程
+和job_append函数通知工作线程。会出现什么样的困难？
+11.4下面哪个步骤序列是正确的？
+⑴对互斥量加锁(pthread_nmteX-lock)0
+(2)	改变互斥量保护的条件。
+(3)	向等待条件的线程发送信号(pthread_cond_broadcast)。
+(4)	对互斥量解锁(pthread_jnutex_unlock)。
+或者
+(1)	对互斥量加锁(pthread_mutex_lock)。
+(2)	改变互斥量保护的条件。
+(3)	对互斥量解锁(pthread_nmtex_unlock)。
+(4)	向等待条件的线程发送信号(pthread_cond_broadcast)。
+
+ 
+

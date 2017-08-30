@@ -1,0 +1,797 @@
+第19章
+伪终端
+19.1引言
+在第9章，我们了解到终端登录是经由自动提供终端语义的终端设备进行的。在终端和运 行的程序之间有一个终端行规程(见图18-2),通过它我们能够在终端上设置特殊字符(退格、
+行删除、中断等)。但是，当一个登录请求到达网络连接时，终端行规程并不是自动被加载到 网络连接和登录程序shell之间的。图9-5显示了一个用来提供终端语义的伪终端(pseudo- terminal) 设备驱动程序。
+除了用于网络登录，伪终端还被用在其他方面，本章将对此进行介绍。我们首先概要叙述 如何使用伪终端，接着讨论某些具体的使用例子。然后，我们提供在不同平台上用于创建伪终 端的函数，并使用这些函数编写一个程序，我们将该程序称为Pty。我们将看到pty程序的一 些不同用途：抄录在终端上输入和输出的所有字符(script(l)程序),运行协同进程来避免 程序清单15-10中遇到的缓冲问题。
+19.2概述
+伪终端这个术语暗示对于一个应用程序而言，它看上去像一个终端，但事实上伪终端并不 是一个真正的终端。图19-1显示了使用伪终端时相关进程的典型结构。其中关键点如下：
+•通常一个进程打开伪终端主设备，然后调用fork。子进程建立了一个新的会话，打开一 @ 个相应的伪终端从设备，将其文件描述符复制到标准输入、标准输出和标准出错，然后 调用exec。伪终端从设备成为子进程的控制终端。
+•对于伪终端从设备之上的用户进程来说，其标准输入、标准输出和标准出错都是终端设 备。对于这些文件描述符，用户进程能够调用第18章中说明的所有输入/输出函数。但是 因为在伪终端从设备之下并没有真正的终端设备，无意义的函数调用(改变波特率、发 送中断符、设置奇偶校验等)将被忽略。
+•任何写到伪终端主设备的东西都会作为从设备的输入，反之亦然。事实上所有从设备端 的输入都来自于伪终端主设备上的用户进程。这看起来就像一个双向管道，但从设备上 的终端行规程使我们拥有普通管道没有的其他处理能力。
+图19-1显示了FreeBSD、Mac 0SX或Linux系统中伪终端的结构。19.3.2节和19.3.3节将介绍如何打 开这些设备。
+在Solaris中，伪终端是使用STREAMS子系统构建的(见14.4节)。图19-2详细描述了 Solaris中各个伪终端STREAMS模块之间的关系。虚线框中的两个STREAMS模块是可选的。
+pckt和ptem模块帮助提供伪终端特有的语义。另外两个模块(ldterm和ttcompat)提供了 行规程处理。
+
+ 
+542 第19章伪终端
+ 
+图19-1使用伪终端的相关进程的典型结构	图19-2 Solaris中的伪终端结构
+请注意从设备上的三个STREAMS模块与程序淸单14-9 (网络登录)的输出是一样的。 19.3.1节将介绍如何组织这些STREAMS模块。
+从现在开始将简化以上图示，不再画出图19-1中的“读、写函数”或图19-2中的“流首”。 使用缩写“PTY”表示伪终端，并将图19-2中所有伪终端从设备之上的STREAMS模块合并在 一起表示为“终端行规程”模块，这与图19-1类似。
+现在，我们来观察伪终端的某些典型用途。
+1.	网络登录服务器
+伪终端可用于构造网络登录服务器。典型的例子是telnetd和rlogind服务器。 Stevens[1990]第15章详细讨论了提供rlogin服务的步骤。一旦登录shell运行在远端主机上， HZZl即可得到如图19-3的结构。telnetd服务器使用类似的结构。
+在rlogind服务器和登录shell之间有两个exec调用，这是因为login程序通常是在两个 exec之间检验用户是否合法。
+本图的一个关键点是驱动PTY主设备的进程通常同时在读写另一个I/O流。图中另一个i/o 流是TCP/IP框。这表示该进程必然使用了如select或poll那样的I/O多路转接(见14.5节)， 或被分成两个进程或线程。
+2.	script程序
+script(l)程序是随大多数UNIX系统提供的，它将终端会话的所有输入和输出信息复制到 一个文件中。它将自己置于终端和登录shell的一个新调用之间，从而完成此工作。图19-4详细 描述了script程序中有关的交互。这里要特别指出，script程序通常是从登录shell启动的， 该shell然后等待script程序的结束。
+
+ 
+19.2 概 述 543
+ 
+网络
+图19-3 rlogind服务器的进程组织结构
+ 
+图 19-4 script程序
+script程序运行时，位于PTY从设备之上的终端行规程的所有输出都被复制到script文件 中(通常叫做typescript)。因为击键通常由该行规程模块回显，所以该script文件也包括了 输入的内容。但是，因为键入的口令不被回显，所以该文件不会包含口令。
+在编写本书第1版时，Rich Stevens用script程序获取实例程序的输出。这样避免了手工复制程序 输出可能带来的错误。但是，使用script的不足之处是必须处理script文件中的控制字苻，
+在19.5节开发了通用的pty程序后，我们将看到使用pty程序和一个简单的shel卿本就能够 实现一种script程序版本。
+3. expect程序
+伪终端可以用来在非交互模式中驱动交互式程序的运行。许多程序需要一个终端才能运行，
+岡
+
+ 
+544 第19幸伪终端
+paSSWd(l)命令就是一个例子，它要求用户在系统提示后输入口令。
+为了支持批处理操作模式而修改所有交互式程序，是非常麻烦的。相比之下，一个更好的 解决方法是通过一个脚本来驱动交互式程序。expect程序[Libes 1990, 1991，1994]提供了这 样的方法。类似于19.5节的pty程序，它使用伪终端来运行其他程序。并且，expect还提供了 一种编程语言用于检查运行程序的输出，以确定用什么作为输入发送给该程序。当一个源自脚 本的交互式的程序正在运行时，不能仅仅是将脚本中的所有内容输入到程序中去，或将程序的 1679]输出送至脚本，而是要检查程序的输出，从而决定下一步输入的内容。
+4.运行协同进程
+在程序清单15-10所示的协同进程例子中，我们不能调用使用标准I/O库进行输入、输出的 协同进程，这是因为当通过管道与协同进程进行通信时，标准I/O库会将标准输入和输出的内容 放到缓冲区中，从而引起死锁。如果协同进程是一个已经编译的程序而我们又没有源程序，则 无法在源程序中加入fflush语句来解决这个问题。图15-8显示了一个进程驱动协同进程的情 况。我们须要做的是将一个伪终端放到两个进程之间(见图19-5),这诱使协同进程认为它是由 终端而非另一个进程驱动的。
+协同进程
+ 
+图19-5用伪终端驱动一个协同进程
+现在协同进程的标准输入和标准输出就像终端设备一样，所以标准I/O库会将这两个流设置为行 缓冲。
+父进程有两种方法在自身和协同进程之间获得伪终端(这种情况下的父进程可以类似程序清 单15-9，使用两个管道和协同进程进行通信；或者像程序清单17-1那样,使用一个STREAMS管道)。 一种方法是父进程直接调用pty_fork函数(见19.4节)而不是fork。另一种方法是将协同进程 作为参数来调用exec执行该pty程序(见19.5节)。我们将在说明pty程序后介绍这两种方法。 5.观看长时间运行程序的输出
+使用任何一个标准shell,可以将一个需要长时间运行的程序放到后台运行。但是如果将该 程序的标准输出重定向到一个文件，并且它产生的输出又不多，那么我们就不能方便地监控程 序的进展，这是因为标准I/O库会将标准输出全部放在缓冲区中。我们看到的将只是标准I/O库 函数写到输出文件中的成块输出，有时甚至可能是大到8192字节的一块。
+如果有源程序，则可以加入fflush调用。另一种方法是，可以在pty程序下运行该程序, 让标准I/O库认为标准输出是终端。图19-6说明了这个结构，我们将这个缓慢输出的程序称为 slowout0 从登录shell到pty进程的fort/exec箭头用虚线表示，以强调pty进程是作为后台 [680|任务运行的。
+19.3打开伪终端设备
+各种平台打开伪终端设备的方法有所不同。在Single UNIX Specification的XSI扩展中包含 了很多函数，试图统一这些方法。这些函数的基础是SVR4用于管理基于STREAMS的伪终端的
+一组函数。
+posix_0penpt用来打开下一个可用的伪终端主设备，该函数是可移植的。
+
+ 
+19.3打开伪终端设备 545
+ 
+图19-6使用伪终端运行一个缓慢输出的程序
+#include <stdlib,h>
+#include <fcntl.h>
+int posix—openpt (int oflag)；
+返回值：若成功则返回下一个可用的PTY主设备的文件描述符，若出错则返回-1
+参数研吨是一个位屏蔽字，指定如何打开主设备，它类似于open(2)的q/Z吨参数，但是并不支 持所有打开标志。对于poSix_openpt,我们可以指定0_RDWR,要求打开主设备进行读、 写，可以指定0_NOCTTY以防止主设备成为调用者的控制终端。其他打开标志都会导致未定义 的行为。
+在伪终端从设备可被使用之前，必须设置它的权限，使得应用程序可以访问它。grantpt 函数提供这样的功能。它把从设备节点的用户ID设置为调用者的实际用户ID，设置其组ID为一 非指定值，通常是可以访问该终端设备的组。将权限设置为：对单个所有者是读/写，对组所有 者是写(0620)。
+#inclixde <stdlib.h>	
+int grantpt (int filedes)；	
+int unlockpt (int filedes)；	
+	两个函数的返回值：若成功则返回0,若出错则返回-1
+为了更改从设备节点的权限，grantpt可能需要fork以及exec—个设置用户ID程序(例 如在Solaris中是/usr/lib/pt-chmodh于是，如果调用者正在捕捉SIGCHLD信号，那么其 运行行为是没有说明的。
+unlockpt函数用于准予对伪终端从设备的访问，从而允许应用程序打开该设备。阻止其他 进程打开从设备后，建立该设备的应用程序有机会在使用主、从设备之前正确地初始化这些设备。
+
+ 
+546 第19章伪终端
+注意，在grantpt和unlockpt这两个函数中，文件描述符参数是与主伪终端设备关联的 文件描述符。
+ptsname函数用于在给定主伪终端设备的文件描述符时，找到从伪终端设备的路径名。这 使应用程序可以独立于给定平台的某种惯例而标识从设备。注意，该函数返回的名字可能存放 在静态存储区中，所以以后的调用可能会覆盖它。
+#include <stdlib.h>	= ^= = ^^ —
+char *ptsname (int filedes)；
+		返回值：若成功则返回指向PTY从设备名的指针，若出错则返回NULL
+表19-1摘要列出了Single UNIX Specification中的伪终端函数，指出了本书讨论的四种UNIX 系统支持哪些函数。
+表19-1 XSI伪终端函数
+函数	说明	XSI	FreeBSD 5.2.1	Linux
+2.4.22	Mac OS X 10.3	Solans
+9
+grantpt	更改从PTY设备的权限	•	•			
+posix_openpt	打开一 1ZPTY设备	•	•			
+ptsname	返回从PTY设备的名字	•	秦			
+unlockpt	允许从PTY设备被打开	•	•	•		•
+在FreeBSD中’ unlockpt不执行任何操作；只是为了调用posix_openpt的应用程序的兼容性而 定义了 0一NOCTTY标志。在FreeBSD中打开终端设备并不会导致分配控制终端的副作用所以 0_NQCTTY标志并无作用.
+尽管Single UNIX Specification已试图改善在此方面的可移植性，但如表19_丨所示，实现还 是落后于标准，正在逐步赶上。于是，我们提供了ptym_open和ptys_open这两个函数处理 所有的细节，前者打开下一个可用的PTY主设备，后者打开相应的从设备。
+#include "apue.h"			
+int ptym_open (char *pts」mme, int ptsjnamesz)；
+返回值：若成功则返回PTY主设备的文件描还符，若出错则返回一 1 int ptys—open (char *pts_name)；
+		返回值：若成功则返回PTY从设备的文件描述符,若出错则返回―里
+通常我们不直接调用这两个函数，函数pty一fork (见19.4节)调用它们，并且也用fork产牛 出一个子进程。
+ptym_open确定下一个可用的PTY主设备并打开该设备。调用者必须分配一个数组来存放 主设备或设备的名字，并且如果调用成功，相应的从设备名字会通过;返回。然后， 把这个名字传给pt,ys_open，ptys_open函数用来打开该从设备。缓冲区的长度由 pts_namesz传送’所以ptym_open函数不复制比该缓冲区长的字符串。
+在说明了pty_fork函数之后，就容易明白为何要提供两个函数来打开这两个设备。通常 一个进程调用ptym一open来打开一个主设备并且得到从设备的名称。该进程然后以f0°rk分〗 子进程，子进程在调用setsid建立新的会话后调用ptys_open打开从设备。这就是从设备如
+
+ 
+19.3打开伪终端设备 547
+何成为子进程的控制终端的过程。
+19.3.1基于STREAMS的伪终端
+Solaris下所有伪终端的STREAMS实现细节在Sun Microsystems[2002]的Appendix C中有所 说明。我们通过一个STREAMS克隆设备(clone device)对下一个可用的PTY主设备进行访问。 克隆设备是一个特殊设备，打开它时返回一个未用设备。(在Rago[1993]中，详细讨论了 STREAMS克隆设备的打开。)
+基于STREAMS的PTY主克隆设备是/dev/ptmx。当我们打开该设备，其克隆open例程自 动决定第一个未被使用的PTY主设备，并打开这个设备(见程序淸单19-1)。(下一节将看到在 基于BSD的系统中，我们必须自己找到第一个未被使用的PTY主设备。)
+	程序清单19-1基于STREAMS的伪终端打开函数	
+#include "apue.h"
+#include <errno.h>
+#include <fcntl.h>
+#include otropts .h>
+int
+ptym_open(char *pts_name, int pts_namesz)
+{ " ~ " char *ptr； int fdm；
+/*
+*	Return the name of the master device so that on failure
+*	the caller can print an error message. Null terminate
+*	to handle case where strlen("/dev/ptmx") > pts—namesz.
+*/
+strncpy(pts_name, "/dev/ptmx", pts_namesz)； pts_name [pts_namesz - 1] = ,\(T; if ((fdm = open(pts_name, 0_RDWR)) < 0) return(-1)；
+if (grantpt(fdm) < 0) { /* grant access to slave */
+if
+if
+(grantpt(fdm) «
+close (fdm)；
+return(-2)；
+(unlockpt(fdm)
+close(fdm)；
+return(-3);
+0) { /* clear slave's lock flag */
+((ptr = ptsname(fdm)) == NULL) { /* get slave,s name */
+close(fdm)；
+return(-4);
+*	Return name of slave. Null terminate to handle
+*	case where strlen(ptr) > pts—namesz.
+*/
+strncpy(pts_name, ptr, pts_namesz)； pt-s_name [pts_namesz - 1] = # \ o# ;
+return(fdm)；	/* return fd of master */
+}
+int
+
+ 
+548 第19幸伪终端
+ptys_open(char *pts_natne)
+{' ' int fds, setup；
+*	The following open should allocate a controlling terminal. V
+if ((fds - open(pts_name, 0_RDWR)) < 0) return(-5)；
+*	Check if stream is already set up by autopush facility.
+*/
+return(-6>;
+((setup = ioctl(fds, I—FIND, HldtermH)) < 0) {
+close(fds)；
+if
+(setup == 0) {
+if (ioctl(fds,： close(fds)； return(-7)；
+if
+(ioctl(fds, I close(fds)； return(-8)；
+PUSH, 'tptetn") < 0) { PUSH, "ldterm1') < 0) {
+if (ioctl (fds, I_PUSH, "ttcoTT^at'*) < o)
+close(fds)；
+return(-9)；
+}
+}
+return(fds)
+首先用open打开克隆设备/dev/ptmx,得到PTY主设备的文件描述符。打开这个主设备自动 锁定了对应的从设备。
+然后调用grantpt来改变从设备的访问权限。在Solaris中，它执行如下操作：将从设备的 所有权改为实际用户ID,将组所有权改为组tty,将权限改为只允许用户-读，用户-写和组- 写。将组所有权设置为tty并允许组-写权限是因为程序waii(i)*write⑴是设置一组_ID的， 并且组为tty。调用函数grantpt执行程序/usr/lib/pt_chmod。该程序是设置-用户-ID 的，并且用户为root,因此它能够修改从设备的所有者和权限。
+函数unlockpt用来淸除从设备的内部锁。在打开从设备前必须做这件事情。另外，我们 必须调用Ptsname来得到从设备的名字。这个名字的格式是/dev/pts/MW。
+接下来的函数是ptys_open，该函数被用来真正打开一个从设备。Solaris沿袭了系统V的处 理模式’如果调用者是一个还没有控制终端的会话首进程，调用open就会分配一个PTY从设备 作为它的控制终端。如果不希望该函数自动做这件事，可以在调用open时指明0_N0CTTY标志。
+打开从设备后’将三个STREAMS模块压入从设备的流中。ptem是伪终端仿真模块， Id term是终端行规程模块，这两个模块合在一起像一个真正的终端一样工作。ttcompat提 供了向早期系统(如V7、4BSD和Xenix)的ioctl调用的兼容性。这是一个可选的模块，但是 因为对于控制台登录和网络登录，它是自动被压入的(见程序淸单14-9程序的输出)，所以我 们将其压入到从设备的流中。
+我们可能并不需要压入这三个模块’其原因是’它们可能已经位于流中。STREAMS系统支
+
+ 
+19.3打开伪终端设备 549
+持称为autopush (自动压入)的设施，它帮助系统管理员配置一张模块列表，只要打开一特定设 备，就将这些模块压入流中(详见Rago[1993])。我们使用I_FIND ioctl命令观察ldterm是否 已在流中。如果是，则认为该流已用autopush机制配置，这样就无需再重复压入相应模块。
+调用ptym_open和ptys_open函数的结果是在调用进程中打开了两个文件描述符，一个 是针对主设备的，另一个是针对从设备的。
+19.3.2基于BSD的伪终端
+在基于BSD和基于Linux的系统中，我们提供了自己的XSI函数版本，根据基础平台提供了 哪些函数，我们可选地将它们包括在我们的函数库中。
+在我们的posiX_0penpt版本(见程序清单19-2)中，我们必须自己确定第一个可用的PTY 主设备。为达到此目的，从/dev/ptypO开始并不断尝试，直到成功打开一个可用的PTY主设备 或试完了所有设备。在打开设备时，可能得到以下两种不同的错误：EIO指示设备已经被使用； ENOENT表示设备不存在。当检测到后一种情况，这表明所有的PTY设备都已在使用之中，于是 就可以停止搜索。一旦成功地打开一个例如名为/dev/ptyM_PTY主设备，那么对应的从设备 名为/dev/ttyMW。在Linux中，如果PTY主设备名是/dev/pty/mXX,那么对应的PTY从设备 名是 / dev/p ty / sXX。
+	程序清单19-2 BSD和Linux的伪终端打开函数	，	
+#include "apue.h11 #include <errno.h>
+#include <fcntl.h>
+#include <grp.h>
+#ifndef 一HAS一 OPENPT int
+posix一openpt(int oflag)
+{ _
+int fdm;
+char *ptrl, *ptr2;
+char ptm_name[16];
+strcpy(ptm_name, ”/dev/ptyXY")；
+/* array index: 0123456789 (for references in following code) */ for (ptrl = "pqrstuvwxyzPQRST"； *ptrl != 0; ptrl++) { ptm 一 name[8] = *ptrl；
+for 一 (ptr2 = "0123456789abcdef,f; *ptr2 != 0； ptr2++) { ptm_name[9] = *ptr2;
+/*
+*	Try to open the master.
+*/
+if ((fdm = open(ptm_name, oflag)) < 0) {
+if (errno == ENOENT) /* different from EIO */ return(-1)；	/* out of pty devices */
+else
+continue；	/* try next pty device */
+}
+return(fdm)；	/* got it, return fd of master */
+errno = EAGAIN；
+return(-1);	/* out of pty devices */
+|685]
+网
+
+ 
+550 第19幸伪终端
+#endif
+#ifndef _HAS_PTSNAME
+char *
+ptsname (int fdm)
+{
+static char pts一name[16];
+char	*ptm_name；
+ptm_name = ttyname(fdm);
+if (ptm_name == NULL)
+return(NULL);
+strncpy (pts_name, pttn一name,
+pts_name [sizeof (pts_name)-
+if (strncmp(pts_name, "/dev/pty/", 9) == 0)
+pts—name[9] « 'B
+else
+pts_name[5] = # t
+return (pts一name}；
+} _
+#endif
+#ifndef 一HAS一GRANTPT
+int
+grantpt(int fdm)
+{
+struct gtoup *grptr；
+int	gid;
+char	*pts_name；
+sizeof(pts—name}}
+1] =
+Pty/",
+/* change /dev/pty/mXX to /dev/pty/sXX */ /* change "pty" to "tty" */
+pts_name = ptsname(fdm)；
+if ((grptr = getgrnam("tty")) !=
+gid = grptr->gr_gid；
+else
+gid = -1;	/* group tty
+NULL)
+is not in the group file */
+*	The following two calls won't work unless we're the superuser.
+*	I
+if (chown(pts_name, getuid()# gid) < 0) return(-1)；
+return(chmod(pts_name, S_IRUSR | S_IWUSR | S一IWGRP>>；
+} - _ _ _
+#endif
+#ifndef _HAS_UNLOCKPT int
+unlockpt(int fdm)
+{
+return(0)； /* nothing to do */
+}
+#endif
+ptym_open (char *pts_name, int pts一natnesz}
+{ ' — ~ char *ptr; int fdm；
+Return the name of the master device so that on failure the caller can print an error message. Null terminate
+
+ 
+19.3打开伪终端设备 551
+*	to handle case where string length > pts_namesz.
+*/
+strncpy(pts_name, "/dev/ptyXX", pts_namesz)；
+pts—name[pts一namesz - 1] = ,\0';
+if ((fdm = posix一openpt(0一RDWR)) < 0) return(-1)；
+if (grantpt(fdm) < 0) {	/* grant access to slave */
+close(fdm)； return(-2)；
+}
+if (unlockpt(fdm) < 0) { /* clear slave,s lock flag */ close(fdm)； return(-3)；
+}
+if ((ptr = ptsname(fdm)) == NULL) { /* get slave's name */ close(fdm)； return(-4)；
+*	Return name of slave. Null terminate to handle
+*	case where strlen(ptr) > pts_namesz.
+*/
+strncpy(pts—name, ptr, pts_namesz)； pts_name[pts_namesz - 1] = 1\0#；
+return(fdm)；	/* return fd of master */
+}
+int
+ptys一open(char *pts_name)
+{ ~
+int fds;
+if {(fds = open(ptsname, 0_RDWR)) < 0) return(-5)； return(fds)；
+在我们的grantpt函数版本中，调用了chown和chmod函数，但是必须意识到调用这两个 函数的进程必须有超级用户权限，否则这两个函数都不能正常工作。如果必须改变所有权或权 限保护，那么这两个函数调用必须放在一个设置用户ID的root用户的可执行程序中，这类似干 Solaris实现grantpt函数的方法。
+程序清单19-2中的函数PtyS_OPen简单地打开该从设备，不需要其他初始化操作。在基干 BSD的系统之下打开PTY从设备不具有分配该设备作为控制终端的副作用。19.4节将探讨如何 在基干BSD的系统下分配控制终端。
+我们的posix_openpt函数版本尝试16组不同的PT\主设备：从/dev/ptypO到/dev/ptyTf。可 用的实际PTY设备数取决于两个因素：(a)内核中配置的数量；(b)在/dev目录中已创建的特殊设冬文 件数。对于任何程序来说，可用数量是(a)和(b)中较小的那一个。
+19.3.3	基于Linux的伪终端
+Linux支持访问伪终端的BSD方法，所以程序清单19-2中所示的函数对于LinuxH样适用。 然而，Linux也支持使用/dev/ptmx (但这不是STREAMS设备)的克隆风格的伪终端接口。 该克隆风格接口要求额外步骤去标识和解锁从设备。在Linux里，我们可以使用程序清单19-3中
+
+ 
+552 第19幸伪终端	
+的函数访问从设备。
+	程序清单19-3 Linux的伪终端open函数	
+#	include 11 apue. hM #include <fcntl.h>
+#ifndef _HAS_OPENPT int
+posix_openpt(int oflag)
+{ _
+int fdm；
+fdm = open("/dev/ptmx", oflag); return(fdm);
+}
+#endif
+#ifndef 一HAS一PTSNAME char *
+ptsname(int fdm)
+{
+int	sminor;
+static char pts_name[16];
+if (ioctl(fdm, TIOCGPTN, &sminor) < 0) return(NULL);
+snprintf(pts_name, sizeof(pts—name), "/dev/pts/%d", sminor); return(pt s_name);
+} _
+#endif
+#ifndef _HAS_GRANTPT int
+grantpt(int fdm)
+{
+char	*pts一name;
+pts—name = ptsname(fdm);
+return(chmod(pts name, S_IRUSR | S_IWUSR | S_IWGRP));
+} - - _ _
+#endif
+#ifndef _HAS_UNLOCKPT
+int
+unlockpt(int fdm)
+{ a
+int lock * 0；
+return(ioctl(fdm, TIOCSPTLCK, Sdock));
+}
+#endif
+int
+ptym_open(char *pts一name, int pts namesz)
+{' "" " char *ptr; int fdm;
+/*
+*	Return the name of the master device so that on failure
+*	the caller can print an error message. Null terminate
+*	to handle case where string length > pts一namesz.
+
+ 
+19.4 pty_fork函数 553
+strncpy(pts_name, "/dev/ptmx”， pts_namesz)； pts—name[pts_namesz - 1] = #\0# ;
+fdm = posix__openpt (0_RDWR),
+if (fdm < 0)
+return(-1)；
+if (grantpt(fdm) < 0) {
+close(fdm);
+return(-2);
+if
+(unlockpt(fdm) close(fdm)； return(-3);
+0) {
+/* grant access to slave */
+/* clear slave's lock flag */
+if ((ptr = ptsname(fdm)) close(fdm)； return(-4)；
+NULL)
+/* get slave's name */
+*	Return name of slave. Null terminate to handle case
+*	where strlen(ptr) > pts—namesz.
+*/
+strncpy(pts—name, ptr, pts—namesz}; pts_name[pts_namesz - 1] = #\0#；
+return(fdm)；	/* return fd of master */
+int
+ptys_open(char *pts—name)
+{" — int fds；
+if ((fds = open(pts_name, 0_RDWR)) < 0) return(-5)； return(fds)；
+在Linux中，PTY从设备已为组tty所拥有，所以在grantpt中须做的一切是确保访问权限 是正确的。
+19.4 pty_fork函数
+现在使用上一节介绍的两个函数ptym_open和ptys_open,编写我们称之为pty_fork 的函数。这个新函数具有如下功能：用fork调用打开主设备和从设备，创建作为会话首进程 的子进程并使其具有控制终端。
+#include napue.h”
+#include <termios.h>
+#include <sys/ioctl.h> /* find struct winsize on BSD systems */
+pid一t pty_fork (int *ptrfdm, char *$lave_name, int slavejmmesz, const struct termios * slave一 termios, const struct winsize * slave一 winsize)；
+返回值：子进程中返回0,父进程中返回子进程的进程ID,出错返回-1
+PTY主设备的文件描述符通过声味/m指针返回。
+
+ 
+554 第19幸伪终端
+如果不为空，从设备名就被存放在该指针指向的存储区中。调用者必须为该存 储区分配空间。
+如果指针不为空，则使用该指针所引用的结构，初始化从设备的终端行规程。 如果该指针为空，那么，系统把从设备的termios结构设置为实现定义的初始状态。类似地， 如果指针不为空，那么按该指针所引用的结构初始化从设备的窗口大小。如果该 指针为空，winsize结构通常被初始化为0。
+程序清单19-4显示了该函数的代码。它调用相应的ptym_open和ptys_open函数，在本 书讨论的四种平台上都能适用。
+	程序清单19-4 Pty_fork函数	
+# include 11 apue. h11 #include <termios,h>
+#ifndef TIOCGWINSZ #include <sys/ioctl.h>
+#endif
+pidj: •• pty—fork(int *ptrfdm, char *slave一name, int slave一namesz, const struct termios *slave一termios, const struct winsize *slave_winsize)
+{ _ int fdm, fds; pid_t pid； char pts—name[20];
+if ((fdm - ptym 一open(pts_name, sizeof(pts一name}}) < 0)
+err—sys("can,t open master pty: %s, error %d", pts一name, fdm);
+if (s1ave_name !* NULL) {
+/*
+*	Return name of slave. Null terminate to handle case
+*	where strlen(pts—name) > slave_namesz.
+}
+if
+strncpy(slave_name, pts一name, slave—namesz);
+siave_name[slave一namesz - 1] = '\0';
+((pid = fork() ) c 0) {
+return(-1)；
+} else if (pid == 0) {	/* child */
+if (setsidO < 0)
+err_sys("setsid error”};
+*	System V acquires controlling terminal on open()•
+*/
+if ((fds = ptyS-Open(pts _name)) < 0) err一sys("can*t open slave pty”)； close(fdm)；	/* all done with master in child */
+#if defined(TIOCSCTTY)
+/*
+*	TIOCSCTTY is the BSD way to acquire a controlling terminal. */
+if (ioctl(fds, TIOCSCTTY, (char *)0) < 0) err_sys("TIOCSCTTY error”};
+#endif	~
+
+ 
+19.5 pty 程序 555
+*	Set slave's termios and window size.
+*/
+if (slave一termios != NULL) {
+if (tcsetattr(fds, TCSANOW, slave一termios) < 0) err_sys("tcsetattr error on slave pty");
+} _
+if (slave—winsize != NULL) {
+if (ioctl(fds, TIOCSWINSZ, slave一winsize} < 0) err 一sys("TIOCSWINSZ error on slave pty");
+} 一
+*	Slave becomes stdin/stdout/stderr of child.
+*/
+if (dup2(fds, STDIN_FILENO) !- STDIN一FILENO)
+err_sys("dup2 error to stdin");
+if (dup2(fds, STDOUT_FILENO) 1= STDOUT一FILENO)
+err一 sys ( "dup2 error to stdout”；
+if (dup2(fds, STDERR_FILENO) != STDERR_FILENO)
+err—sys("dup2 error to stderr”)；
+if (fds != STDIN—FILENO && fds != STDOUT_FILENO &&
+fds != STDERR_FILENO)
+close(fds);
+/* child returns 0 just like fork() */
+/* parent */
+/* return fd of master */
+/* parent returns pid of child */
+return(0)； else {
+♦ptrfdm = fdm return(pid);
+}
+[6931
+在打开PTY主设备后，调用fork。正如前面提到的，子进程先调用setsid建立新的会话， 然后才调用ptyS_open。当调用setsid时，子进程还不是一个进程组的首进程，因此执行 9_5节中列出的三个操作步骤：(a)为子进程创建一个新的会话，它是该会话首进程，(b)为子进 程创建一个新的进程组，(c)子进程断开与以前可能有的控制终端的关联，于是不再有控制终 端。在Linux和Solaris系统中，当调用ptyS_open时，从设备成为新会话的控制终端。在 FreeBSD和Mac OS X系统中，必须调用ioctl并使用参数TIOCSCTTY来分配一个控制终端 (Linux也支持TIOCSCTTY ioctl命令)。然后termios和winsize这两个结构在子进程中被 初始化。最后从设备的文件描述符被复制到子进程的标准输入、标准输出和标准出错中。这意 味着不管子进程以后调用exec执行何种进程，它都具有同PTY从设备(其控制终端)联系起来 的上述三个描述符。
+在调用fork后，父进程返回PTY主设备的描述符以及子进程ID。下一节将在pty程序中使 用Pty_fork函数。
+19.5 pty程序
+编写Pty程序的目的是为了用键入：
+pty prog argl arg2
+来代替：	•
+prog argl arg2	*
+当我们用Pty来执行另一个程序时，该程序在一个它自己的会话中执行，并和一个伪终端
+
+ 
+struct termios struct winsize
+fdm, c, ignoreeoff pid;
+★driver; s1ave_name[20]； orig—termios； size;
+#ifdef LINUX
+#define OPTSTR ”+过乂土取"
+#else
+#define OPTSTR ”d:einv"
+#endif
+static void set一noecho(int); void	do_driver(char *)；
+void	loop(int, int);
+int
+main(int argc, char *argv[])
+interactive = isatty(STDIN一FILENO)
+ignoreeof = 0;
+noecho = 0；
+verbose = 0；
+driver = NULL;
+opterr = 0；	/* don't want geto
+while ((c = getopt(argc, argv, OPT
+switch (c) {
+case 1d1:	/* driver for
+driver = optarg； break；
+#include "apue.h"
+#include ctermios.h>
+#ifndef TIOCGWINSZ
+#include <sys/ioctl.h> /* for struct
+#endif
+winsize */
+the end of this the file driver. the file loop.c
+interactive, nc
+pt() writing to STR)) !: EOF) {
+stdin/stdout */
+case ;e*:
+noecho = 1； break;
+case # i#：
+ignoreeof = break；
+case f ：
+interactive
+break;
+case #v#：
+verbose = 1 break；
+/* noecho for slave pty7 s line
+/*
+1;
+ignore EOF on standard inpu
+/* not interactive */
+/* verbose */
+case :
+err一quit("unrecognized option： -%cM, optop
+file */
+c */
+echo, verbose；
+stderr */
+discipline */
+t */
+t);
+556 第19幸伪终端
+连接。
+让我们查看pty程序的源代码。程序清单19-5包含main函数。它调用上一节的pty_fork 函数。
+程序清单19-5 pty程序的main函数
+t
+_ r r t d a a n i h h
+ 
+* * *
+/ / /
+
+ 
+19.5 pty 程序 557
+if (optind >= argc)
+err_quit (usage: pty [ -d driver -einv ] program [ arg ...]
+if (interactive) { /* fetch current termios and window size */
+if (tcgetattr(STDIN_FILENO, &orig_termios) < 0)
+err—sys("tcgetattr error on stdin"};
+if (ioctl(STDIN_FILENO# TIOCGWINSZ, (char *) &size) < 0)
+err_sys("TIOCGWINSZ error"};
+pid - pty_fork(dm, slave一name, sizeof(slave一name},
+&orig一termios, &size);
+} else {
+pid = pty_fork(&fdm, slave一name, sizeof(slave_name)#
+NULL, NULL);
+if (pid < 0) {
+err—sys ( " fork error11);
+} else if (pid == 0) {	/* child */
+if (noecho)
+set_noecho(STDIN一FILENO); /* stdin is slave pty */
+if (execvp(argv[optind], &argv[optind]) < 0)
+err_sys("can"t execute： %s”， argv[optind])；
+} 一
+if (verbose) {
+fprintf(stderr, "slave name = %s\n", slave一name);
+if (driver !* NULL)
+fprintf(stderr, "driver = %s\n", driver);
+}
+if (interactive && driver == NULL) {
+if (tty一raw(STDIN一FILENO) < 0) /*
+err一sys("tty_raw error");
+if (atexit(tty 一atexit) < 0)
+err—sys("atexit error")；
+} _
+user's tty to raw mode */
+/* reset user's tty on exit */
+[6951
+if (driver)
+do一driver(driver); /* changes our stdin/stdout */
+loop(fdm, ignoreeof)； /* copies stdin -> ptym, ptym -3
+exit(0)；
+static void
+set_noecho(int fd)	/* turn off echo (for slave pty) */
+{ _
+struct termios stermios；
+if (tcgetattr(fd, &stermios) < 0)
+err 一sys("tcgetattr error")?
+stermios.C_lflag &= ~(ECHO 丨 ECHOE | ECHOK | ECHONL};
+/*
+*	Also turn off NL to CR/NL mapping on output.
+*/
+stermios.c_oflag &= ~(ONLCR)；
+if (tcsetattr(fd, TCSANOW, &stermios) < 0)
+stdout
+
+ 
+558 第19幸伪终端
+err_sys("tcsetattr error")； } 一
+下一节介绍pty程序的不同用法时，将看到多种命令行的选项。getopt函数帮助我们以 协调一致的模式分析命令行参数。我们将在第21章更详细地讨论该函数。
+在调用pty_fork前，我们取termios和winsize结构的当前值，将其作为参数传递给 pty_fork。通过这种方法，PTY从设备具有和当前终端相同的初始状态。
+从pty_fork返回后，子进程可选择地关闭了PTY从设备的回送，并调用execvp来执行命 令行指定的程序。所有余下的命令行参数将成为该程序的参数。
+父进程可选地将用户终端设置为原始模式。在这种情况下，父进程也设置退出处理程序， 使得在调用exit时复原终端状态，下一节将讨论do_driver函数。
+接下来，父进程调用函数loop (见程序清单19-6)。该函数仅仅是将从标准输入接收到的 所有内容复制到PTY主设备，并将PTY主设备接收到的所有内容复制到标准输出。尽管使用 select或poll的单进程或多线程是可行的，但是为了有所变化，我们程序里使用了两个进程。
+	程序清单19-6 loop函数	
+#include "apue.h"
+#define BUFFSIZE 512 static void sig一term(int);
+static volatile sig—atomic一t sigcaught； /* set by signal handler */ void
+loop(int ptym, int ignoreeof)
+{
+pid一t child； int nread； char buf[BUFFSIZE]；
+if ((child = fork()) < 0) { err 一sys("fork error");
+} else if (child == 0) { /* child copies stdin to ptym */ for ( ; ; ) {
+if ((nread = read(STDIN—FILENO, buf, BUFFSIZE)) < o) err—sys("read error from stdin"}; else if (nread == 0)
+break;	/* EOF on stdin means we're done */
+if (writen(ptym, buf, nread) != nread)
+err_9ys("writen error to master ptyM)；
+} 一 /*
+*	We always terminate when we encounter an EOF on stdin,
+*	but we notify the parent only if ignoreeof is 0.
+*/
+if (ignoreeof 0)
+kill(getppid()# SIGTERM)； /* notify parent */ exit(0); /* and terminate； child cantt return */
+}
+/*
+*	Parent copies ptym to stdout.
+*/
+if (signal—intr(SIGTERM, gig一term) == SIG一ERR)
+
+ 
+19.6使用pty程序 559
+err_sys ( "signal__intr error for SIGTERM11);
+for ( ; ; ) {
+if ((nread = read(ptym, buf, BUFFSIZE)) <= 0) break;	/* signal caught, error, or EOF
+if (writen(STDOUT_FILENO, buf, nread) 1= nread) err_sys("writen error to stdout");
+*	There are three ways to get here： sig_term() below caught the
+*	SIGTERM from the child, we read an EOF on the pty master (which
+*	means we have to signal the child to stop), or an error.
+*/
+if (sigcaught == 0) /* tell child if it didn't send us the signal */ kill(Child, SIGTERM);
+/*
+*	Parent returns to caller.
+*/
+*	The child sends us SIGTERM when it gets EOF on the pty slave or
+*	when read() fails. We probably interrupted the read() of ptym. */
+static void sig_term(int signo)
+{ _
+sigcaught =1;	"just set flag and return */
+注意，当使用两个进程时，如果一个终止，那么它必须通知另一个。我们用SIGTERM信号 进行这种通知。
+19.6使用pty程序
+接下来看几个Pty程序的应用实例，并了解使用不同命令行选项的必要性。
+如果使用Kora shell,那么我们执行：
+pty ksh
+结果得到一个运行在一个伪终端下的全新shell。
+如果文件ttyname包含了程序清单18-7中所示的程序，那么可按如下模式执行pty程序：
+$ who
+sar	:0	Oct	5	18:07	
+sar	pts/0	Oct	5	18	07	
+sar	pts/1	Oct	5	18	07	
+sar	pts/2	Oct	5	18	07	
+sar	pts/3	Oct	5	18	07	
+sar	pts/4	Oct	5	18	07	pts/4是正在使用的最髙PTY设备
+$ pty ttyname				在pty上运行程序清单18-7
+fd 0	/dev/pts/5				pts/5是下一个可用的PTY
+fd 1	/dev/pts/5				
+fd 2	/dev/pts/5				
+1. utmp文件
+6.8节讨论了记录当前UNIX系统登录用户的utmp文件。那么在伪终端上运行程序的用户是 否被认为是登录了呢？如果是远程登录，telnetd和rlogind，显然在伪终端上登录的用户
+
+ 
+560 第19幸伪终端
+应该在utmp中有相应记录项。但是，在来自窗口系统或script之类的程序的伪终端上运行 shell的用户，是否应该在utmp中有相应记录项呢？对于这个问题一直没有统一的认识。有的系 统有记录，有的没有。如果在utmp文件中没有记录的话，who(l)程序一般不会显示相应伪终 端正在被使用。
+除非utmp允许其他用户的写权限(这被认为是一个安全漏洞)，否则使用伪终端的一般程 序将不能对其进行写操作。
+2.作业控制交互
+在Pty下运行作业控制shell时，它能够正常地运行。例如，
+pty ksh
+在Pty下运行Kom shell。我们能够在这个新shell下运行程序并使用作业控制，这如同在登录
+shell中一样。但如果在pty下运行一个交互式程序而不是作业控制shell,比如：
+pty cat
+在键入作业控制挂起字符之前该程序的运行一切正常。而在键入作业控制挂起字符时，作业控 制挂起字符将会被显示为AZ,并且被忽略。在早期基于BSD的系统中，cat进程终止，pty进 程终止，回到初始登录shell。为了明白其中的原因，我们需要检查所有相关的进程及其所属的 进程组和会话。图19-7显示了pty cat运行时的结构图。
+会话	会话
+厂3程iT _ ———进涵—_ —I厂¥程i I
+ 
+图19-7 pty cat的进程组和会话
+键入挂起字符(Ctrl+Z)时，它被cat进程下的行规程模块所识别，这是因为pty将终端 (在Pty父进程之下)设置为原始模式。但内核不会停止cat进程，这是因为它属牛一个孤儿进 程组(见9.10节)。cat的父进程是pty父进程，它属于另一个会话。
+历史上，不同的系统处理这种情况的方法也不同。POSIX.1只是说明SIGTSTP信号不能被 发送给进程。而4.3BSD派生出的系统向进程递送一个它不能捕获的SIGKILL信号。4.4BSD改 变了这种做法，转而采用遵循POSIX.1的处理方法。如果SIGTSTP信号具有默认配置，并且传 递给孤儿进程组中的一个进程，那么内核无声息地丢弃SIGTSTP信号。大多数当前的实现都采 用这种处理模式。
+
+ 
+19.6使用pty程序 561
+当使用Pty来运行作业控制shell时，被这个新shell调用的作业决不会是任何孤儿进程组的 成员，这是因为作业控制shell总是属于同一个会话。在这种情况下，键入的Ctrl+Z被发送到由 shell调用的进程’而不是shell本身。
+让被Pty调用的进程能够处理作业控制信号的唯一的方法是，另外增加一个Pty命令行标M\ 志，使Pty子进程自己能够识别作业挂起字符(在Pty子进程中)，而不是让该字符穿越所有路 程而送至另一个行规程模块。
+3.	检査长时间运行程序的输出
+另一个使用Pty进行作业控制交互的例子见图19-6。如果运行一个缓慢地产生输出的程序：
+pty slowout > file.out &
+当子进程试图从标准输入(终端)读入数据时，Pty进程立刻停止运行。这是因为该作业是一 个后台作业，并且当它试图访问终端时会使作业控制停止。如果将标准输入重定向使得Pty不 从终端读取数据，如：
+pty slowout < /dev/null > file.out &
+那么Pty程序也立即停止，这是因为它从标准输入读取到一个文件结束符。解决这个问题的方 法是使用-i选项，其含义是忽略来自标准输入的文件结束符：
+pty -i slowout < /dev/null > file.out &
+这个标志导致在遇到文件结束符时，程序清单19-6的pty子进程终止，但子进程不会告诉父进 程也终止。相反，父进程一直在将PTY从设备的输出复制到标准输出(本例中的file .out)。 國
+4.	script程序
+利用Pty程序，可以用下面的sheU脚本实现script(l)程序：
+#!/bin/sh
+pty _•${SHELL:-/bin/sh} ” | tee typescript
+一且执行这个shell脚本，即可运行ps命令来观察进程之间的关系。图19-8详细地显示了这些关系。
+typescript 文件
+ 
+图 19-8 script shell脚本
+在这个例子中，假设SHELL变量是Kom shell (可能是/bin/ksh)。如前面所述，script仅仅 是将新的shell (和它调用的所有的子进程)的输出复制出来，但是因为PTY从设备之上的行规
+
+ 
+562 第19幸伪终端
+程模块通常允许回送，所以绝大多数键入都被写到typescript文件中。
+5.	运行协同进程
+在图15-4中，协同进程不能使用标准I/O函数，其原因是标准输入和输出不指向终端，其输 _入和输出将被放到缓冲区中。如果用
+if (execl("./pty", "pty", "-e", ”add2\ {char *)0) < 0)
+替代
+if {execl(",/add2M# Hadd2", (char *)0) < 0)
+在pty下运行协同进程，即使协同进程使用了标准1/0，该程序仍然可以正确运行。
+图19-9显示了在使用伪终端作为协同进程的输入和输出时，进程之间的关系。这是图19-5 的扩充，它显示了所有的进程间联系和数据流。框中的“实施驱动的程序”是按前面的说明更 改了 execl 的图 15-4。
+ 
+图19-9运行一协同进程，以伪终端作为其输入和输出
+这一实例显示了对于pty程序，-e (不回送)选项的重要性。因为pty的标准输入不连接 到终端，所以它不以交互方式运行。在程序清单19-5中，interactive标志默认为false,这 是因为对isatty调用的返回是false。这意味着在真正终端之上的行规程保持在规范模式下， 并允许回送。指定-e选项后，关掉了PTY从设备上的行规程模块的回送。如果不这样做，则键 入的毎一个字符都将被两个行规程模块回送两次。
+我们也用-e选项关闭termios结构的ONLCR标志，以防止所有的协同进程的输出被回车 和换行符终止。
+在不同的系统上测试这个例子，会遇到14.8节中描述readn和writen函数时顺便提到的 ■同样问题。当描述符不是引用普通磁盘文件，从read返回时，读到的数据量可能因实现的不 同而有所区别。使用Pty的协同进程产生了非预期的结果，其原因可追溯至图15-4程序中读管 道的read函数，它返回的结果不到一行。解决方法是不使用图15-4的程序，而是使用修改过的 使用标准I/O库的习题15.5的程序版本，它将两个管道的标准I/O流都设置为行缓冲。这样， fgets函数将会一直读完一个整行。图15-4中的while循环假设送到协同进程的毎一行都会带 来一行的返回结果。
+
+ 
+19.6使用pty程序 563
+6.用非交互横式驱动交互式程序
+虽然让Pty运行任一协同进程的想法是非常诱人的，但即使协同进程只是交互式的，它都 不能正常工作。问题在于Pty只是将其标准输入中的任何内容复制到PTY，并将来自PTY的任 何内容复制到标准输出，而并不关心具体发送或得到什么数据。
+举个例子，我们可以在Pty之下运行telnet命令，直接与远程主机会话：
+pty telnet 192.168.1.3
+这样做与直接键入telnet 192.168.1.3相比，并没有带来什么好处，但我们可能希望在一个 脚本中运行telnet程序，其目的很可能是要检验远程主机的某些条件。如果telnet. and文件 包括下面4行：
+sar
+passwd
+uptime
+exit
+第1行是登录到远程主机时使用的用户名，第2行是口令字，第3行是希望运行的命令，第4行终 止此会话。如果按下列方式运行此脚本
+pty -i < telnet.cmd telnet 192.168.1.3
+那么，它不像我们所想的那样操作。所发生的是telnet, and文件的内容还没有等到机会提示 我们输入账户名和口令之前，就被送到了远程主机。当它关闭回显而读口令时，login使用 tcsetattr选项，于是丢弃了已在队列中的所有数据。这样一来，我们发送的数据就被丢掉了。
+当以交互方式运行telnet程序时，我们等待远程主机发出输入口令的提示，然后再键入 口令，但是Pty程序不知道这样做。这就是为什么我们需要一个比pty更巧妙的程序，如 expect,来从脚本文件驱动交互式程序。
+即使如前所示那样从图15-4运行pty,这也没有任何帮助。这是因为图15-4的程序认为它 在一个管道写入的毎一行都会在另一个管道产生一行。对于一个交互式程序，输入一行可能产 生多行输出。更进一步，图15-4的程序在从协同进程读之前，总是先送一行给该进程。在送给 协同进程一些数据之前，我们不可能从协同进程处读。
+有一些从shell脚本驱动交互式程序的方法。可以在pty上增加一种命令语言和一个解释器。 但是一个适当的命令语言可能十倍于Pty程序的大小。另一种方案是使用命令语言并用 pty_fork函数来调用交互式程序，这正是expect程序所做的。
+我们将采用一种不同的途径，使用选项-d使pty程序的输入和输出与驱动进程连接起来。 该驱动进程的标准输出是pty的标准输入，反之亦然。这有点儿像协同进程，只是在pty的 “另一边”。此种进程结构与图19-9中所示的几乎相同，但是在这种场景中，由pty来完成驱动 进程的fork和exec。而且我们在pty和驱动进程之间使用一个双向的流管道，而不是两个半 双工管道。
+程序清单19-7是do_driver函数的源码，在使用-d选项时，该函数被pty (见程序清单 19-5)的main函数调用。
+程序清单19-7 pty程序的ao_driver函数
+#	inc lude 11 apue.h" void
+do driver(char *driver)
+
+ 
+564 第19章伪终端
+pid_t
+int
+child； pipe[2],
+*	Create a stream pipe to communicate with the driver.
+if (s_pipe(pipe) < err一sys {,,can/1
+0)
+create stream pipe);
+if ((child = fork⑴ < 0) {
+err—sys ("fork error”；
+} else if (child == 0) {
+close(pipe[1])；
+/* child */
+/* stdin for driver */
+if (dup2(pipe[0], STDIN一FILENO) != STDIN一FILENO} err 一 sys ("dup2 error to stdin”；
+/* stdout for driver */
+if (dup2(pipe[0], STDOUT_FILENO) != STDOUT—FILENO) err—sys ("dup2 error to stdout”； if (pipe[0] != STDIN_FILENO && pipe[0] STDOUT_FILENO) close(pipe[0])；
+/* leave stderr for driver alone */ execlp(driver, driver, {char *)0)； err_sys{"execlp error for： %sn, driver)；
+} _
+close{pipe[0])； /* parent */ if (dup2(pipe[l], STDIN_FILENO) != STDIN_FILENO) err__sys (Mdup2 error to stdin1')； 一 if {dup2(pipe[l], STDOUT—FILENO> != STDOUT_FILENO) err_sys("dup2 error to stdout");	_
+if {pipe [1] != STDIN—FILENO && pipe [1] != STDOUT FILENO) close{pipe[1])；	一
+*	Parent retuirris, but with stdin and stdout connected
+*	to the driver,
+通过我们自己编写由pty调用的驱动程序，可以按所希望的方式驱动交互式程序。即使驱 动程序有和pty连接在一起的标准输入和标准输出，它仍然可以通过读、写/dev/tty同用户 交互。这个解决方法仍不如expect程序通用，但是它用不到50行的代码，提供了一种可选的 方案。
+19.7高级特性
+伪终端还有其他特性，我们在这里简略提一下。Sun Microsystems[2002]和BSD pty⑷的 手册页对此有更详细的说明。
+1.打包横式
+打包模式(packet mode)能够使PTY主设备了解到PTY从设备的状态变化。在Solaris系统 中，可以将流模块pckt压入PTY主设备端来设置这种模式。图19-2显示了这种可选模块。在 FreeBSD、Linux和Mac OS X中，可以用TIOCPKT ioctl命令来设置这种模式。
+
+ 
+19.8 小 结 565
+Solaris和其他平台相比较，具体的打包模式有所不同。在Solaris中，读取PTY主设备的进 程必须调用getmsg从流首取得消息，这是因为pckt模块将一些事件转化为无数据的 STREAMS消息。在其他平台，每一次对PTY主设备的read操作都会在返回状态字节后跟随可 选的数据。
+无论实现细节如何，打包模式的目的是，当PTY从设备之上的行规程模块出现以下事件时， 通知进程从PTY主设备读取数据：读队列被刷新，写队列被刷新，输出被停止(如： Ctrl+S),输出重新开始，XON/XOFF流控制被关闭后重新启用，XON/XOFF流控制被启用后 重新关闭。这些事件被rlogin客户进程和rlogind服务器进程等使用。
+2.	远程横式
+PTY主设备可以用TIOCREMOTE ioctl命令将PTY从设备设置成远程模式。虽然FreeBSD 5.2.1、Mac OS X 10.3和Solaris 9使用同样的命令来打开或关闭这个特性，但是在Solaris中， ioctl的第三个参数是一个整型数，而在FreeBSD和Mac OS X中是一个指向整型数的指针。 (Linux 2.4.22不支持这一命令。)
+当PTY主设备将PTY从设备设置成这种模式时，它通知PTY从设备之上的行规程模块对从 主设备接收到的任何数据都不进行任何处理，不管从设备termios结构中的规范或非规范标志 是否设置。远程模式适用于窗口管理器这种进行自己的行编辑的应用程序。
+3.	窗口大小变化
+PTY主设备之上的进程可以用TIOCSWINSZ ioctl命令来设置从设备的窗口大小。如果新 的大小和旧的不同，s IGWINCH信号将被发送到PTY从设备的前台进程组。
+4.	倍号发生
+读、写PTY主设备的进程可以向PTY从设备的进程组发送信号。在Solaris 9中，可以用 TIOCSIGNAL ioctl命令做到这一点，该命令的第三个参数就是信号编号。在FreeBSD 5.2.1 和Mac OS X 10.3中，用TIOCSIG ioctl来做到这一点，它的第三个参数是指向信号编号值的 指针。(Linux 2.4.22不支持这一ioctl命令。)
+19.8小结
+本章开始部分扼要叙述了如何使用伪终端并观察了某些应用实例。接着，分析说明了在本 书讨论的四种平台上打开伪终端所需的代码，然后用此代码提供了通用的pty_fork函数，它 可用于多种不同的应用。该函数是小程序pty的基础。我们使用pty揭示了伪终端的许多属性。
+伪终端在大多数UNIX系统中毎天都被用来进行网络登录。我们检查了伪终端的许多其他 用途，从script程序到使用批处理脚本来驱动交互式程序等。
+习题
+19.1当用telnet或rlogin远程登录到一个BSD系统上时，像我们在19.3.2节讨论过的那样， PTY从设备的所有权和权限被设置。该过程是如何发生的？
+19.2	在BSD系统上修改程序清单19-2中的grantpt函数，使之调用一个设置用户ID程序来改 变PTY从设备的所有权和权限(类似于Solaris中的grantpt函数所做的那样)。
+19.3	使用pty程序来决定你的系统用来初始化PTY从设备的termios结构和winsize结构 的值。
+國
+回
+
+ 
+566 第19幸伪终端
+19.4重写loop函数(见程序清单19-6),使之成为使用select或poll的单个进程。
+19.5在子进程中，pty_fork返回后，标准输入、标准输出和标准出错都以读写模式打开。
+能够将标准输入变成只读，另两个变成只写吗？
+19.6在图19-7中，指出哪个进程组是前台的，哪个进程组是后台的，并指出会话首进程。
+19.7在图19-7中，当键入文件终止符时，进程终止的顺序是什么？如果可能的话，用进程会 计信息验证之。
+19.8 Script(l)程序通常在输出文件头增加一行说明它的开始时间，在输出文件末尾增加一 行说明它的结束时间。将这个特性加到本章简单的shell脚本中。
+19.9	解释为什么在下面的例子中，文件data的内容被输出到终端上，基什么时候程序 ttyname只产生输出而从不读取输入。
+cat data
+0	d y o d lltllol2
+1	r p 1 r
+e o e o d d d h w $ h w £ f £
+-i < data ttynam®
+/dev/ttyp5
+/dev/ttyp5
+/dev/ttyp5
+一个有两行的文件
+-i表示忽略Win的文件结束标志 这两行来自何处？
+我们期望ttyname输出这三行
+國
+19.10	编写一个调用pty_fork的程序，该程序用子进程exec另一个你必须编写的程序。后面 这道新程序能够捕获SIGTERM和SIGWINCH。当捕获到信号时，要打印出有关消息，并 且对于后一种信号，还要打印终端窗口大小。然后让父进程用19.7节描述过的ioctl向 PTY从设备的进程组发送SIGTERM信号。从PTY从设备读回消息，验证捕获的信号。接 下来由父进程设置PTY从设备窗口的大小，并读回PTY从设备的输出。让父进程退出并 确定是否PTY从设备进程也终止了，如果它也终止了，请解释它何以终止。
+
+ 
+

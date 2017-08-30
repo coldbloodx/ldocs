@@ -1,0 +1,1362 @@
+表15-1 UNIX系统IPC摘要
+
+第17章
+高级进程间通信
+17.1引言
+前面两章讨论了UNIX系统提供的各种1PC，包括管道和套接字。本章介绍两种高级IPC: 基于STREAMS的管道(STREAMS-based pipe)以及UNIX域套接字(UNIX domain socket), 井说明它们的应用方法。使用这些IPC,可以在进程间传送打开文件描述符。服务进程可以使 它们的打开文件描述符与指定的名字相关联，客户进程可以使用这些名字与服务进程通信。我 们会了解到操作系统如何为每一个客户进程提供一个独用的IPC通道。构成本章所述技术基础 的很多思想来自于Pressotto和Ritchie[1990]的论文。
+17.2	基于STREAMS的管道
+基于STREAMS的管道(简称为STREAMS管道，STREAMS pipe)是一个双向(全双工) 管道。单个STREAMS管道就能向父、子进程提供双向的数据流。
+«忆15.1节，Solaris支持STREAMS管道，Linux的可选附加包也提供了STREAMS管道。
+图17-1显示了观察STREAMS管道的两种方式。它与图15-1的唯一区别是双向箭头连线，因 为STREAMS管道是全双工的，数据可以双向流动。
+如若从内部观察STREAMS管道(图17-2),可以看到它简单得只包含两个流首，每个流首 的写队列(WQ)指向另一个流首的读队列(RQ),写入管道一端的数据被放入另一端的读队 列的消息中。
+因为STREAMS管道是-个流，所以可将STREAMS模块压入到该管道的任一端(图17-3)。
+用户进程
+用户进程
+ 
+ 
+图17-1观察STREAMS管道的两种方式
+
+ 
+470 第17幸高级进程间通信
+但是，如果我们在一端压入了一个模块，那么并不能在另一端弹出该模块。如果想要删除它， 则必须从原压入端删除。
+fd[0]
+ 
+fd[l]
+流首	流首
+图17-2 STREAMS管道的内部结构
+fd[0]
+ 
+fd[l]
+流首	模块	流首
+图H-3带模块的STREAMS管道内部结构
+假定不做类似于压入模块这样复杂的处理，那么，除了支持在streamio(7)中描述的大多 数流ioctl命令外，STREAMS管道的运行行为与非STREAMS管道并无差别。在17.2.2节，我 们将见到一个实例，它将一个流模块压入STREAMS管道中，当我们在文件系统中给管道一个 名字时，它提供了唯一连接。
+下面用一个STREAMS管道再次实现程序清单15-9中的协同进程实例。程序清单17-1是新的 main函数。add2协同进程与程序清单15-8中的相同。本程序调用了创建单个STREAMS管道的 新函数s_pipe。(下面紧接着将说明该函数的STREAMS管道和UNIX域套接字版本。)
+	程序清单17-1用STREAMS管道驱动add2过»进程的程序
+#include "apue.h"
+static void sig_pipe(int);	/* our signal handler */
+int
+main(void)
+{
+int n ； int fd[2]； pid_t pid； char line[MAXLINE]；
+if (signal(SIGPIPE, sig_pipe) == SIG_ERR) err一 sys ("signal error”；
+if (s_pipe(fd) < 0)	/* need only a single stream pipe */
+err一sys("pipe error")；
+if ((pid = fork()) < 0) { err 一sys("fork error")；
+一 一 
+ 
+17.2基于STREAMS的管道 471
+} else if (pid > 0) {	/* parent */
+close(fd[1])；
+while (fgets(line, MAXLINE, stdin) != NULL) { n = strlen(line)； if (write(fd[0], line, n) != n)
+err_sys("write error to pipe"); if ((n = read(fd[0], line, MAXLINE)) < 0) err_sys("read error from pipe")； if (n == 0) {
+err一msg("child closed pipe")； break；
+}
+line[n] = 0； /* null terminate */ if (fputs(line, stdout) == EOF) err_sys("fputs error")；
+} 一 if (ferror(stdin))
+err_sys("fgets error on stdin")； exit(0)；
+} else {	/* child */
+close(fd[0]);
+if (fd[l] != STDIN 一FILENO &&
+dup2(fd[l], STDIN一FILENO) != STDIN_FILENO) err_sys("dup2 error to stdin")； if (fd[l] != STDOUT一FILENO &&
+dup2(fd[l], STDOUT—FILENO) != STDOUT一FILENO) err_sys("dup2 error to stdout")； if (execl("./add2", "add2", (char *)0) < 0) err一sys{"execl error")；
+exit(0)；
+}
+static void sig_pipe(int signo)
+}
+printf("SIGPIPE caught\n"). exit(1);
+父进程只使用fd [ 0 ]，子进程只使用fd [ 1 ]。因为STREAMS管道的每一端都是全双工的， 所以父进程读、写fd[0]，而子进程将fd[l]复制到标准输入和标准输出。图17-4显示了由此 构成的各描述符。注意，除了STREAMS管道的全双工性质外，该实例并没有使用STREAMS管 道的其他特性，所以如果使用不是基于STREAMS的全双工管道，它同样能行。
+父进程
+子进程(协同进程)
+ 
+图17-4 %协同进程所作的描述符安排
+Rago [1993]较详細地描述了基于STREAMS的管道。回忆表15-1, FreeBSD支持全双工管道，但 这些管道并不是基于STREAMS机制的。
+□
+
+ 
+472 第17章高级进程间通信
+s_pipe函数定义为与标准pipe函数类似。它的调用参数与pipe相同，但返回的描述符 \M 以读-写模式打开。
+实例：基于STREAMS&s_pipe函数
+程序清单H-2是基于函数版本。它只是简单地调用创建全双工管道的 标准pipe函数。
+	程序清单17-2基于函数版本
+#include "apue.h"
+/*
+*	Returns a STREAMS-based pipe, with the two file descriptors
+*	returned in fd[0] and fd[l].
+*/
+int
+s_pipe(int fd[2])
+{
+return(pipe(fd))；
+}
+□
+17.2.1命名的STREAMS管道
+通常，管道仅在相关进程之间使用：子进程继承父进程的管道。在15.5节，我们见到无关 进程可以使用HFO进行通信，但是这仅仅提供单向通信。STREAMS机制提供了一种途径，使 得进程可以给予管道一个文件系统中的名字。这就避免了单向FIFO的问题。
+我们可以用f attach函数给STREAMS管道一个文件系统中的名字。
+#inelude <stropts.h>	
+int fattach (int filedest const char *path)；	
+	返回值:若成功则返回0，若出错则返回-1
+pa谈参数必须引用一个现存的文件，调用进程应当或者拥有该文件并且对它具有写权限，或者 正在以超级用户特权运行。
+一且STREAMS管道连接到文件系统名字空间，那么原来使用该名字的底层文件就不再是 可访问的。打开该名字的任一进程将能访问相应管道，而不是访问原先的文件。在调用 fattach之前打开底层文件的任一进程可以继续访问该文件。确实，一般而言’这些进程并不 知道该名字现在引用了另外一个文件。
+图17_5显示了连接到路径名/tmp/pipe的一条管道。只有管道的-端连接到文件系统中一 个名字上。另一端用来与打开该连接文件名的进程通信。虽然fattach函数可将任何种类的 STREAMS文件描述符与文件系统中的一个名字相连接，但它最主要用于将一个名字给予一 [589] STREAMS 管道。
+一个进程可以调用f detach函数撤销STREAMS管道文件与文件系统中名字的关联关系。
+#include <stropts.h>	
+int f detach (const char *path)；	
+	返回值：若成功则返回0t若出错则返回-1
+
+ 
+17.2基于STREAMS的管道 473
+ 
+在调用fdetach函数之后，先前依靠打开path而能访问STREAMS管道的进程仍可继续访 问该管道，但是在此之后打开执的进程将访问驻留在文件系统中的底层文件。
+17.2.2唯一连接
+虽然我们可以将STREAMS管道的一端连接到文件系统的名字空间，但是如果多个进程都 想要用命名STREAMS管道与服务器进程通信，那么仍然存在问题。若几个客户进程同时将数 据写至一管道，那么这些数据就会混合交错。即使我们保证客户进程写的字节数小于 PIPE_BUF,使得写操作是原子性的，但是仍无法保证服务器进程将数据送回所期望的某个客 户进程，也无法保证该客户进程一定会读此消息。当多个客户进程同时读一管道时，我们无法 调度具体哪一个客户进程去读我们所发送的消息。
+connld STREAMS模块解决了这一问题。在将一个STREAMS管道连接到文件系统的一个 名字之前，服务器进程可将connld模块压入要被连接管道的一端。其结果示于图17-6。
+ 
+图17-6为唯一连接设置connld
+在图17-6中，服务器进程已将管道的一端连接至/tmp/pipe。我们用虚线指示客户进程正 在打开所连接的STREAMS管道。一旦打开操作完成，则服务器进程、客户进程和STREAMS管 道之间的关系示于图17-7中。
+客户进程决不会接收到它所打开管道端的打开文件描述符。作为替代，操作系统创建了一 个新管道，对客户进程返回其一端，作为它打开/tmp/pipe的结果。系统将此新管道另一端 的文件描述符经由已存在的连接管道发送给服务器进程，结果在客户进程和服务器进程之间构
+
+ 
+474 第17章高级进程间通信
+ 
+國成了唯一连接。我们将在17.4.1中了解到用STREAMS管道传送文件描述符的机制。
+fattach函数是在mount系统调用之上构造的。这种设施被认为是安策流(mounted stream)。安 装流和connld模块是由Presotto和Ritchie[1990]为Research UNIX系统开发的。然后，SVR4采用了这些 机制，
+现在，我们将开发三个函数’使用这些函数可以创建在无关进程之间的唯一连接。这些函 数模仿了在16.4节中讨论过的面向连接的套接字函数。在此处，我们使用STREAMS管道作为 底层通信机制，在17.3节我们则将见到用UNIX域套接字实现的同样这三个函数。
+#include	"apue.h"		
+int	serv_	■listen(const char	*name)；	
+int	serv_	accept (int listenfd,	返回值：若成功则返回要侦听的文件描述符， uid一t *uidptr)；	若出错则返回负值
+int	返回值：若成功则返回新文件描述符，
+cli一conn (const char *name)；	若出错则返回负值
+			返回值：若成功则返回文件描述符，	若出错则返回负值
+服务器进程调用serv一listen函数(程序清单17-3)声明它要在一个众所周知的名字 (文件系统中的某个路径名)上侦听客户进程的连接请求。当客户进程想要连接至服务器进程 时’它们将使用该名字。serv—listen函数的返回值是STREAMS管道的服务器进程端。
+程序清单17-3使用STREAMS管道的serv」Listen函数
+#include "apue.h"
+#include <fcntl.h>
+#include <stropts.h>
+/* pipe permissions： user rw, group rw, others rw */
+#define FIFO_MODE (S—IRUSR|S_IWUSR|S_IRGRP|S—IWGRP|S_IROTH|S_IWOTH)
+/*
+*	Establish an endpoint to listen for connect requests.
+*	Returns fd if all OK, <0 on error
+
+ 
+17.2基于STREAMS的管道 475
+int
+serv_listen(const char *name)
+{ _
+int tempfd; int fd[2];
+/*
+*	Create a file： mount point for fattach() */
+unlink(name);
+if ((tempfd = creat(name, FIFO_MODE)) < 0) return(-1)； if (close(tempfd) < 0) return(-2); if (pipe(fd) < 0) return(-3)；
+* Push connId &
+*/
+if (ioctl (fd[l],
+close(fd[0])；
+close(fd[1])；
+return(-4);
+}
+if (fattach(fd[1] close (fd[0])； close(fd[l])； return(-5);
+fattach() on fd[1].
+I_PUSH, "connld") < 0) {
+name) < 0) {
+close(fd[1])； /* return(fd[0]); /*
+fattach holds this end open */
+fd[0] is where client connections arrive */
+服务器进程使用serv_accept函数(程序清单17-4)等待客户进程连接请求的到达。当 一个请求到达时，系统自动创建一个新的STREAMS管道，serv_accept函数向服务器进程返 回该STREAMS管道的一端。另外，客户进程的有效用户ID存放在指向的存储区中。
+	程序清单17-4使用STREAMS管道的serv—accept函数
+#include Hapue.h"
+#include <stropts.h>
+/*
+*	Wait for a client connection to arrive, and accept it.
+*	We also obtain the client# s user ID.
+*	Returns new fd if all OK, <0 on error.
+*/
+int
+serv一accept(int listenfd, uid一t *uidptr)
+{ ~ ~ struct strrecvfd recvfd;
+if (ioctl(listenfd, I_RECVFD, &recvfd) < 0)
+return(-1)； /* could be EINTR if signal caught */ if (uidptr != NULL)
+★uidptr = recvfd.uid; /* effective uid of caller */ return(recvfd.fd)； /* return the new descriptor */
+
+ 
+476 第17章高级进程间通信
+客户进程调用cli_conn函数(程序清单17-5)连接至服务器进程。客户进程指定的参数 nfl/ne必须与服务器进程调用serv_listen函数时所用的相同。函数返回时，客户进程得到接 _连至服务器进程的文件描述符。
+	程序清单17-5用STREAMS管道的cli—conn函数
+#include "apue.h"
+#include <fcntl.h>
+#include <stropts.h>
+/*
+*	Create a client endpoint and connect to a server.
+*	Returns fd if all OK, <0 on error.
+cli一conn(const char *name)
+{
+int	fd；
+/* open the mounted stream */ if ((fd = open(name, ORDWR)) < o) return(-1)； if (isastream(fd) == 0) { close(fd)； return(-2)；
+}
+return(fd)；
+我们对返回的描述符是否弓丨用STREAMS设备进行了二次检验，以防服务器进程没被启动 而路径名仍存在于文件系统中。在17.6节中，我们将会了解到如何使用这三个函数。
+17.3	UNIX域套接字
+UNIX域套接字用于在同一台机器上运行的进程之间的通信。虽然因特网域套接字可用于 同一目的，但UNIX域套接字的效率更高。UNIX域套接字仅仅复制数据，它们并不执行协议处 理，不需要添加或删除网络报头，无需计算检验和，不要产生顺序号，无需发送确认报文。
+UNIX域套接字提供流和数据报两种接口。UNIX域数据报服务是可靠的，既不会丢失消息 也不会传递出错。UNIX域套接字是套接字和管道之间的混合物。为了创建一对非命名的、相 互连接的UNIX域套接字，用户可以使用它们面向网络的域套接字接口，也可使用 socketpair 函数。
+國
+#include <sys/socket.h>
+int socketpair (int domain, int type, int protocol, int sockfd [2])；
+返回值：若成功则返回0，若出错则返回-1
+虽然该接口具有足够的一般性，socketpair可用于任意域，但操作系统通常仅对UNIX 域提供支持。
+实例：使用UNIX域套接字的s_pipe函数
+程序清单17-6是基于套接字的3』1^函数版本，该函数曾出现于程序清单17-2。s_pipe
+
+ 
+17.3 UNIX域套接字 477
+函数创建一对相连接的UNIX域流套接字。
+	程序清单17-6 b—pipe函数的套接字版本
+#include "apue.h"
+#include <sys/socket.h>
+/*
+*	Returns a full-duplex "stream" pipe (a UNIX domain socket)
+*	with the two file descriptors returned in fd[0] and fd [1]. */
+int
+s_pipe(int fd[2])
+{'
+return(socketpair(AFUNIX, SOCK_STREAM, 0, fd))；
+} ' ~
+茱些基于BSD的系统使用UNIX域套接字实现管道。但当调用pipe时，第一描述符的写端和第二
+描述符的读端都被关闭。为了得到全双工管道，成们必趣支接與/flsocketpair。
+□
+17.3.1命名UNIX域套接字
+虽然socketpair函数创建相互连接的一对套接字，但是每一个套接字都没有名字。这意
+味着无关进程不能使用它们。
+在16.3.4节，我们学习了如何将一个地址绑定一因特网域套接字。恰如因特网域套接字一
+样，我们也可以命名UNIX域套接字，并可将其用于告示服务。但是要注意的是，UNIX域套接
+字使用的地址格式不同于因特网域套接字。
+回忆16.3节，套接字地址格式可能随实现而变。UNIX域套接字的地址由sockaddr_un结
+构表示。在Linux 2.4.22和Solaris 9中，sockaddr_un结构按下列形式定义在头文件
+<sys/un.h>4]：
+struct sockaddr_un {
+sa_family_t sun_family；	/* AF_UNIX */
+char	sun_path[108]； /* pathname */
+}；
+但是在FreeBSD 5.2.1 和Mac OS X 10.3中，sockaddr_un结构定义如下：
+struct sockaddr_un
+unsigned char
+sa—family 一t
+char
+}；
+sockaddr一un结构的sun_path成员包含一路径名。当我们将一地址绑定至UNIX域套接 字时，系统用该路径名创建-类型为S_IFS0CK的文件。
+该文件仅用于向客户进程告知套接字名字。该文件不能打开，也不能由应用程序用于通信。 如果当我们试图绑定地址时，该文件已经存在，那么bind请求失败。当关闭套接字时， 并不自动删除该文件，所以我们必须确保在应用程序终止前，对该文件执行解除链接操作。
+实例
+程序清单I7-7是一个例子，它将一地址绑定一UNIX域套接字。
+sun—len;	/* length including null */
+sun 一family;	/* AF_UNIX */
+sun_path[104]； /* pathname */
+
+ 
+478 第17幸高级进程间通信
+	程序清单17-7将一个地址绑定一UNIX域套接宇	
+#	include 11 apue. h11 #include <sys/socket.h>
+#include <sys/un.h>
+main(void)
+{
+int fd, size； struct sockaddr_un un；
+un.sun一family = AF—UNIX; strcpy(un.sun_path, "foo.socket")； if ((fd = socket(AF一UNIX, SOCK—STREAM, 0)) < 0) err一sys ("socket failed”； size = offsetof(struct sockaddr_un, sun_path) + strlen{un.sun_path); if (bind(fd, (struct sockaddr *)&un, size) < 0) err—sys(Mbind failed"); printf("UNIX domain socket boundXn")； exit(0);
+当运行此程序时，bind请求成功执行，但是如若第二次运行该程序，则出错返回，其原 因是该文件已经存在。在删去该文件之前，程序清单17-7不会成功运行。
+$ ./a.out	运行该程序
+UNIX domain socket bound
+$ Is -1 £oo.socket	査看套接字文件
+srwxrwxr-x 1 sar	0 Aug 22 12:43 foo.socket
+$ ./a.out	试图再次运行该程序
+bind failed： Address already in use
+$ rm £oo.socket	删除该套接字文件
+$ ./a.out	第3次运行该程序
+UNIX domain socket bound	现在成功啦
+确定绑定地址长度的方法是，先确定sun_path成员在sockaddr_un结构中的偏移量， 然后将此与路径名长度(不包括终止null字符)相加。因为在sun_path之前的成员与实现相 关，所以我们使用<stddef .h>头文件(apue.h中包括)中的of f setof宏计算sun_path 成员从结构开始处的偏移量。如果查看<31(1(^£.1^,则可见到类似于下列形式的定义：
+#define offsetof(TYPE, MEMBER) ((int)&((TYPE *)0)->MEMBER)
+假定该结构从地址0开始，此表达式求得成员起始地址的整型值。	□
+17.3.2唯一连接
+服务器进程可以使用标准bind、listen和accept函数，为客户进程安排一个唯一UNIX 域连接(unique UNIX domain connection)。客户进程使用connect与服务器进程联系，服务器 进程接受了connect请求后，在服务器进程和客户进程之间就存在了唯一连接。这种风格的操 作与我们在程序清单16-4和程序清单16-5中所示的对因特网域套接字的操作相同。
+程序清单17-8示出了 senlisten函数的UNIX域套接字版本。
+	程序清单17-8 UNIX域套接宇的Berv_liBten函数	
+#include "apue.h"
+#include <sys/socket
+
+ 
+17.3 UNIX域套接字 479
+#include <sys/un,h>
+#include <errno.h>
+#define QLEN 10
+/*
+*	Create a server endpoint of a connection.
+*	Returns fd if all OK, <0 on error.
+*/
+int
+serv_listen(const char *name)
+{ _
+int	fd, len, err, rval
+struct sockaddr—un un；
+/* create a UNIX domain stream socket */ if ((fd = socket(AF一UNIX, SOCK_STREAM, 0)) < 0) return(-1);
+unlink(name); /* in case it already exists */
+/* fill in socket address structure */ memset(&un# 0, sizeof(un))； un. sim—family = AF_UNIX； strcpy(un.sun_path# name)；
+len = offsetof(struct sockaddr_un, sun_path) + strlen(name);
+/* bind the name to the descriptor */ if (bind(fd, (struct sockaddr *)&un, len) < 0) { rval = -2； goto errout；
+}
+if (listen(fd, QLEN) < 0) { /* tell kernel we're a server */ rval = -3; goto errout；
+}
+return(fd)；
+errout：
+err = errno； close(fd)； errno = err； return(rval)；
+首先，我们调用socket创建一个UNIX域套接字。然后将欲賦予套接字的众所周知路径名 填入sockaddmn结构。该结构是调用bind的参数。注意，我们不需要设置某些平台提供的 sun—len字段，操作系统用传送给bind函数的地址长度设置该字段。 最后，调用listen函数(16.4节)以通知内核该进程将作为服务器进程等待客户进程的 连接请求。当收到一个客户进程的连接请求后，服务器进程调用serv_aCCept函数(程序清 单 17-9)。
+	程序清单17-9 UNIX域套接字的serv_aCC印t函数	
+#include "apue.h11	,
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
+#include <errno.h>
+#define STALE 30 /* client's name can,t be older than this (sec) */
+
+ 
+480 第17幸高级进程间通信
+*	Wait for a client connection to arrive, and accept it.
+*	We also obtain the client's user ID from the pathname
+*	that it must bind before calling us.
+*	Returns new fd if all OK, <0 on error */
+int
+serv_accept(int listenfd, uid_t *uidptr)
+int
+time_t
+struct sockaddr一un struct stat
+clifd, len, err, rval;
+staletime；
+un；
+statbuf；
+len =： sizeof (un)；
+if ((clifd = accept (listenfd, (struct sockaddr *) Scun, &len)
+return(-1)；	/* often errno=EINTR/ if signal caught
+)< */
+0)
+/* obtain the client's uid from its calling address */
+len -= offsetof(struct sockaddr一un, sun_path); /* len of pathname */
+un.sun_path[len] = 0;	/* null terminate */
+if (stat(un.sun_path, &statbuf) < 0) { rval = -2； goto errout;
+}
+#ifdef S一ISSOCK /* not defined for SVR4 */ if (S_ISS0CK(statbuf.st一mode) == 0) { rval - -3;	/* not a socket */
+goto errout；
+#endif
+if
+((statbuf.st一mode & (statbuf.st_mode & rval = -4; /* goto errout；
+(S一IRWXG | S_IRWXU) != is not rwx-
+3_IRWX0)) || S_IRWXU) {
+staletime = time(NULL) if (statbuf.st一atime < statbuf.st一ctime < statbuf.st_mtime < rval - -5； /* goto errout；
+-STALE; staletime || staletime || staletime) { i-node is too old */
+if (uidptr != NULL)
+♦uidptr = statbuf.st_uid; uniink(un.sun_path)；	/*
+return(clifd)；
+errout：
+err = errno; close(clifd)； errno = err； return(rval)；
+/* return uid of caller */ we,re done with pathname now */
+服务器进程在调用serv一accept中阻塞以等待一*客户进程调用cli_conn。从accept返 回时，返回值是连接到客户进程的崭新的描述符。(这有些类似于connld模块对于STREAMS 于系统所做的那样。)另外，accept函数也经由其第二个参数(指向sockaddr_un结构的指
+
+ 
+17.3 UNIX域套接字 481
+针)返回客户进程賦予其套接字的路径名(包含客户进程ID的名字)。接着，程序在此路径名 结尾处填补null字符，然后调用stat函数。这使我们验证该路径名确实是一个套接字，其权限 仅允许用户-读、用户-写以及用户-执行。我们也验证与套接字相关联的3个时间不比当前时 间早30秒。(回忆6.10节，time函数返回当前时间和日期，单位是秒，起始点是公元1970年1月 1 日 00._0。)
+如若通过了所有这些检验，则可认为客户进程的身份(其有效用户ID)是该套接字的所有 者。虽然这种检验并不完善，但这是对当前系统所能做到的最佳方案。(如若内核能像处理 I_RECVFD ioctl命令那样，使accept返回有效用户ID,则会更好一些。)
+客户进程调用cli_Corm函数(程序清单17-10)对联向服务器进程的连接进行初始化。
+	程序清单17-10用于UNIX域套接字的cli_c0im函数	
+#include "apue.h"
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
+#define CLI—PATH "/var/tmp/"	/* +5 for pid = 14 chars */
+#define CLI PERM S IRWXU
+/* rwx for user only */
+*	Create a client endpoint and connect to a server.
+*	Returns fd if all OK, <0 on error.
+*/
+int
+cli conn(const char *name)
+int	fd,
+struct sockaddr un un；
+len, err, rval；
+/* create a UNIX domain stream socket */ if ((fd = socket(AF一UNIX, SOCK一STREAM, 0)) < 0) return(-1);
+/* fill socket address structure with our address */ memset (Stun, 0, sizeof (un))； un.sun_family - AF一UNIX;
+sprintf(un.sun_path, M%s%05d", CLI—PATH, getpid{))；
+len = offsetof(struct sockaddr一 un, sun_path) + strlen(un.sun_path)
+unlink(un.sunjpath)；	/* in case it already exists */
+if (bind(fd, (struct sockaddr *)&un# len) < 0) { rval = -2; goto errout；
+}
+if (chmod(un.sunjpath, CLI—PERM) < 0) { rval = -3； goto errout；
+}
+/* fill socket address structure with server's address */ memset(&un, 0, sizeof(un))； un.sun—family = AF一 UNIX; s trcpy(un.sun_path, name)；
+len = offsetof(struct sockaddr_un, sun_path) + strlen(name)； if (connect(fd, (struct sockaddr *)&un, len) < 0) { rval = -4 ； goto errout；
+}
+
+ 
+482 第17幸高级进程间通信
+return(fd);
+errout：
+err = errno； close(fd)； errno = err; return(rval)；
+我们调用socket函数创建UNIX域套接字的客户进程端，然后用客户进程专有的名字填入
+sockaddr_un 结构 0
+我们不让系统为我们选择一个馱认地址，原因是这样处理后，服务器进程将不能区分各个 客户进程。于是，我们绑定我们自己的地址，在开发使用套接字的客户端程序时通常并不采用
+这一步骤。
+我们绑定的路径名的最后5个字符来自客户进程ID。我们调用unlink,以防该路径名已经 存在。然后，调用bind将名字賦予客户进程套接字。这在文件系统中创建了一个套接字文件， 所用的名字与被绑定路径名一样。接着，调用chmod关闭除用户-读、用户-写以及用户-执行 以外的其他权限。在Serv_aCCept中，服务器进程检验这些权限以及套接字用户ID以验证客 户进程的身份。
+然后，我们必须填充另一个sockaddr_un结构，这次用的是服务器进程众所周知的路径 名。最后，调用connect函数初始化与服务器进程的连接。
+17.4传送文件描述符
+在进程间传送打开的文件描述符的能力是非常有用的，可以用它对客户进程/服务器进程应 用进行不同的设计。它使一个进程(一般是服务器进程)能够处理为打开一个文件所要求的一 切操作(具体如将网络名翻译为网络地址、拨号调制解调器、协商文件锁等)以及向调用进程 送回一描述符，该描述符可被用于以后的所有i/o函数。涉及打开文件或设备的所有细节对客户 _进程而言都是隐藏了的。
+下面进一步说明从一个进程向另一个进程“传送一打开的文件描述符”的含义。回忆图3-2, 其中显示了两个进程，它们打开了同一文件。虽然它们共享同一v节点表，但每个进程都有它 自己的文件表项。
+当一个进程向另一个进程传送一打开的文件描述符时，我们想要发送进程和接收进程共享 同一文件表项。图17-8显示了所希望的安排。
+在技术上，发送进程实际上向接收进程传送一个指向一打开文件表项的指针。该指针被分 配存放在接收进程的第一个可用描述符项中。(注意，不要造成错觉，以为发送进程和接收进 程中的描述符编号是相同的，通常它们是不同的。)两个进程共享同一打开文件表项，在这一 点上与fork之后，父、子进程共享打开文件表项的情况完全相同(参见图8-1)。
+当发送进程将描述符传送给接收进程后，通常它关闭该描述符。发送进程关闭该描述符并 不造成关闭该文件或设备，其原因是该描述符对应的文件仍被视为由接收进程打开(即使接收 _进程尚未接收到该描述符)。
+下面定义本章使用的三个函数以发送和接收文件描述符。本节将会给出对于STREAMS和 套接字的这三个函数的不同实现代码。
+
+ 
+17.4传送文件描述符 483
+V节点表
+进程表项
+件针 文指
+d 士心
+进程表项
+图17-8从顶部进程传送一个打开的文件至底部进程
+当一个进程(通常是服务器进程)希望将一个描述符传送给另一个进程时，它调用Send_fd 或send_err。等待接收描述符的进程(客户进程)调用recv_fd。 s end_f d经由辦代表的STREAMS管道或UNIX域套接字发送描述符
+我们将使用术语s管道表示可实现为STREAMS管道或UNIX域流套接字的双向通信通道..
+曰已时^^函数用辦发送作撕叹以及后随的伽如字节。伽《«的值应在-1到-255之间。 客户进程调用recv—fd接收一描述符。如果一切正常(发送者调用了Send_fd),则作为 函数值返回非负描述符。否则，返回值是由send_err发送的(-1到-255之间的一个值)。 另外，如果服务器进程发送了一条出错消息，则客户进程调用它自己的处理该消息。
+的第一个参数是常量STDERR_FILENO，然后是指向出错消息的指针及其长度。 «««/«%函数的返回值是已写的字节数或负的出错编号值。客户进程常将指定为通常的 write函数。
+我们实现了用于这三个函数的我们自己制定的协议。约发送一描述符，send_fd先发送两 个0字节，然后是实标描述符。为了发送一条出错消息，send_err发送errmsg,然后是1个0字
+
+v节点信息 i节点信息
+ 
+#include "apue.h"
+int send—fd (int/d, int fdjto_send)；
+int send—err (int fd, int status, const char *errmsg)；
+两个函数返回值：若成功则返回0，若出错则返回-1 int recv一fd (int fdt ssize一t {*userfunc) (int, const void *, size—t));
+返回值：若成功则返回文件描述符，若出错则返回负值
+0:1:2:3: fdfdfdfd
+ 
+484 第17幸高级进程间通信
+节，最后是字节的绝对值(1~255)。recv_fd读s管道中所有字节直至null字符。null字符 之前的所有字符都传送给调用者的wser/wnc。recv_fd读到的下一个字节是status字节。若 status字节为0,那么一个描述符已传送过来，否则表示没有描述符可接收。
+Send_err函数在将出错消息写到STREAMS管道后，即调用send_fd函数。如程序清单 17-11所示。
+程序清单17_11 send_err函数
+#include "apue.h"	
+/*
+* Used when we had planned to send an fd using send fd()#	
+* but encountered an error instead. We send the error back	
+*	using the send_fd()/recv_fd() protocol.*	I	
+t
+int	
+send_err(int fd, int errcode, const char *msg)
+/	
+I
+int n ;	
+if ((n = strlen(msg)) > 0)	
+if (writen(fd, msg, n) 1= n) /* send the error message	*/
+return(-1)；	
+if (errcode >= 0)	
+errcode = -l； /* must be negative */	
+if (send—fd(fd, errcode) < 0)	
+return(-1)；	
+return(0);
+}	
+以下两节介绍函数send_fd和reCV_fd的具体实现。	
+17.4.1经由基于STREAMS的管道传送文件描述符	
+文件描述符用两个ioctl命令经由STREAMS管道交换，这两个命令是：	工一SENDFD和
+I—RECVFD。为了发送一个描述符，将ioctl的第三个参数设置为实际描述符。	这示于程序清
+单17-12中。	
+程序清单17-12 STREAMS管道的send—M函数	
+#include "apue.h"	
+#include <stropts.h>	
+/*
+* Pass a file descriptor to another process.	
+*	If fd<0, then -fd is sent back instead as the error status,★	/	
+/
+int	
+send fd(int fd, int fd to send) - _ —	
+l
+char buf[2]； /* send_fd()/recv_fd() 2-byte protocol */	
+buf[0] = 0； /* null byte flag to recv_fd() */	
+if (fd一to一send < 0) {	
+buf [1] = -fd to send； /* nonzero status means error */	
+if (buf[1] :: oT	
+
+ 
+17.4传送文件描述符 485
+new descriptor */
+effective user ID of sender */
+effective group ID of sender */
+struct strrecvfd { int fd； uid_t uid； gid_t gid； char fill [8];
+recv_fd读STREAMS管道直到接收到双字节协议的第一个字节(null字节)。当发出 I_RECVFD ioctl命令时，位于流首读队列中的下一条消息应当是一个描述符，它是由 I—SENDFD发来的，或者是一条出错消息。该函数示于程序清单17-13中。
+程序清单17-13 STREAMS管道的reCV_M函数
+#include "apue.h"
+#include <stropts.h>
+/*
+*	Receive a file descriptor from another process (a server)•
+*	In addition, any data received from the server is passed
+*	to (*userfunc)(STDERR—FILENO, buf, nbytes). We have a
+*	2-byte protocol for receiving the fd from send_fd().
+*/
+int
+recV-fd(int fd, ssize_t
+{—
+int
+char
+char
+struct strbuf
+struct strrecvfd
+status = -1；
+for ( ; ? ) {
+dat.buf = buf；
+dat.maxlen = MAXLINE；
+flag = 0;
+if (getmsg(fd, NULL, &dat, &flag) < 0) err_sys("getmsg error”)； nread = dat.len； if (nread -= 0) {
+err—ret("connection closed by server"); return(-1);
+(★userfunc)(int, const void *• size一t))
+newfd, nread, flag, status；
+*ptr；
+buf[MAXLINE]; dat ? recvfd；
+buf[1] = 1； /* -256, etc. would screw up protocol */
+} else {
+buf[1] * 0?	/* zero status means OK */
+}
+if (write(fd, buf, 2) != 2) return(-1)?
+if (fd一to一send >= 0)
+if (ioctl(fd,工一SENDFD, fd_to_send) < 0) return(-1)； return(0);
+当接收一个描述符时，ioctl的第三个参数是一指向strrecvfd结构的指针。
+/*
+/*
+/*
+
+
+ 
+486 第17章高级进程间通信
+data byte count, including header */ originating protocol */ protocol-specific type */
+struct cmsghdr {
+socklen_t cmsg—len; int	cmsg—level;
+int	cmsg type；
+*	See if this is the final data with fiull & status.
+*	Null must be next to last byte of buffer, status
+*	byte is last byte. Zero status means there must
+*	be a file descriptor to receive.
+*/
+for (ptr = buf; ptr < &buf[nread]； ) { if (*ptr++ == 0) {
+if (ptr !» &buf[nread-1])
+err_dump ("message format error11)； status = *ptr & OxFF; /* prevent sign extension */ if (status == 0) {
+if (ioctl(fd, I一RECVFD, &recvfd) < 0) return(-1); newfd = recvfd.fd; /* new descriptor */
+} else {
+newfd = -status；
+}
+nread -= 2;
+if (nread > 0)
+if ((*userfunc)(STDERRFILENO, buf,
+return(-1)；
+nread) != nread)
+if (status >= 0) return(newfd)；
+/* final data has arrived */
+/* descriptor, or -status */
+17.4.2经由UNIX域套接字传送文件描述符
+为了用UNIX域套接字交换文件描述符，调用sendmsg(2)和reCvmSg(2)函数(16.5节)。 这两个函数的参数中都有一个指向msghdr结构的指针，该结构包含了所有有关收发内容的信 息。该结构的定义大致如下：
+struct msghdr { void
+socklen一t struct iovec int void
+socklen t int
+*msg_name； msg—namelen; *msg_iov; msg—iovlen; *msg_control; msg一controllen； msg一flags；
+optional address */
+address size in bytes */
+array of I/O buffers */
+number of elements in array */
+ancillary data */
+number of ancillary bytes */
+flags for received message */
+其中，头两个元素通常用于在网络连接上发送数据报文，在这里，目的地址可以由每个数 据报文指定。下面两个元素使我们可以指定由多个缓冲区构成的数组(散布读和聚集写)，这 与对readv和writev函数(见14,7节)的说明一样。msg_flags字段包含了说明所接收到消 息的标志，这些标志摘要示于表16-9中。 两个元素处理控制信息的传送和接收。msg—control字段指向cmsghdr (控制信息首部) 结构，msg_controllen字段包含控制信息的字节数。
+/*
+/*
+
+ 
+17.4传送文件描述符 487
+/* followed by the actual control message data */
+}；
+为了发送文件描述符，将cmsg_len设置为cmsghdr结构的长度加一个整型(描述符)的
+长度，cmsg_level字段设置为SOL_SOCKET，cmsg_type字段设置为SCM_RIGHTS，用以
+指明我们在传送访问权。(SCM指的是套接字级控制消息，socket_level contro丨message。)访问
+权仅能通过UNIX域套接字传送。描述符紧随cmsg_type字段之后存放，用CMSG_DATA宏获
+得该整型量的指针。
+三个宏用于访问控制数据，一个宏用于帮助计算cmsg_len所使用的值。
+#include <sys/socket,h>
+unsigned char *CMSG_DATA(struet cmsghdr *q>);
+返回值：指向与cmsghdr结构相关联的数据的指针
+struct cmsghdr *CMSG一FIRSTHDR(struct msghdr *mp);
+返回值：指向与msghdr结构相关联的第-个cmsghdr结构的指针，若无这样的结构则返回NULL
+struct cmsghdr *CMSG_NXTHDR{struct msghdr *mpr
+struct cmsghdr *cp)
+返回值：指向与msghdr结构相关联的下一个cmsghdr结构的指针，该msghdr结构给出了
+当前cmsghdr结构，若当前cmsghdr结构已是最后一个则返回NULL
+unsigned int CMSG_LEN (unsigned int nbytes)；
+返回值：为《办大小的数据对象分配的长度
+Single UNIX规范定义了前三个宏，但没有定义CMSG_LEN。
+CMSG_LEN宏返回为存放长度为nfc声5的数据对象所需的字节数。它先将nfcy如加上
+cmsghdr结构的长度，然后按处理机体系结构的对齐要求进行调整，最后再向上取整。
+程序清单17-14是UNIX域套接字的send_fd函数。
+	程序清单17-14 UNIX域套接字的send_fd函数	
+#include "apue.h"
+include <sys/socket.h>
+/* size of control buffer to send/recv one file descriptor */
+#define CONTROLLEN CMSG_LEN(sizeof(int))
+static struct cmsghdr *cmptr = NULL； /* malloc*ed first time */
+/*
+*	Pass a file descriptor to another process.
+*	If fd<0, then -fd is sent back instead as the error status.
+fd_to_send)
+iov[l]；
+msg；
+buf[2]； /* send_fd()/recv_fd() 2-byte protocol */
+-buf ；
+send_fd(int fd, int { 一
+struct iovec struct msghdr char
+iov[0].iov_base
+
+ 
+第17章高级进程间通信
+iov[0]•iov 一len = 2;
+msg.msg_iov = iov；
+msg.msg_iovlen = 1；
+msg.msg_name = NULL?
+msg.msg_namelen = 0?
+if (fd_to_send < 0) {
+msg.msg—control = NULL；
+msg.msg—controllen = 0；
+buf [1] = ~fd_to—send; /* nonzero status means error
+if (buf[1] o7
+buf[1] = 1; /* -256, etc. would screw up protocol
+} else {
+if (cmptr =« NULL && (Cmptr = malloc(CONTROLLEN)) == NULL)
+return(-1)；
+cmptr->cmsg一level = SOL 一SOCKET;
+cmptr->cmsg_type = SCM_RIGHTS；
+cmptr->cmsg_len = CONTROLLEN j
+msg.msg一control = cmptr；
+msg.msg一controllen = CONTROLLEN；
+*(int *)CMSG一 DATA(cmptr) = fd—to_send;	/* the fd to pass */
+buf[1】=0;	/* zero status means OK */
+*/
+buf[0] = 0;	/* null byte flag to recv—fd()
+if (sendtnsg(fd, &tnsg, 0) != 2)
+return(-1)；
+return(0);
+}
+*/
+在sendmsg调用中，发送双字节协议数据(null和status字节)和描述符。 为了接收文件描述符(程序清单17-15)，我们为cmsghdr结构和描述符分配足够大的空间， 将msg_control指向该存储空间，然后调用recvmsg。我们使用CMSG_LEN宏计算所需空间 的总量。 我们从UNIX域套接字读入，直至读到mill字节，它位于最后的status字节之前。mill字节之 前是一条来自发送者的出错消息。这示于程序清单17-15中。
+程序清单17-15 UNIX域套接字的reCv_fd函数
+#include ”apue.h"
+#include <sys/socket.h> /* struct msghdr */
+/* size of control buffer to send/recv one file descriptor */
+#define CONTROLLEN CMSG_LEN(sizeof(int))
+static struct cmsghdr *cmptr ^ NULL;	/* malioc,ed first time */
+"
+*	Receive a file descriptor from a server process. Also, any data
+*	received is passed to (*userfunc)(STDERR一FILENO, buf, nbytes}•
+*	We have a 2-byte protocol for receiving the fd from send fd().
+int
+recv—fd(int fd, seize_t (*userfunc)(int, const
+void ★, size t))
+int
+char
+char
+struct
+struct
+iovec
+msghdr
+newfd, nr, status； *ptr；
+buf[MAXLINE]； iov[l]； msg；
+
+ 
+17.4传送文件描述符 489
+status - -1? for ( ; ； ) {
+iov[◦].iov一base = buf；
+iov[◦].iov_len = sizeof(buf)；
+msg.msg_iov - iov；
+msg.msg_iovlen = 1；
+msg.msg一name = NULL；
+msg.msg_name1en = 0；
+if (cmptr == NULL && (cmptr = malloc(CONTROLLEN)) == NULL) return(-1)； msg.msg_control = cmptr; msg.msg一controllen = CONTROLLEN； if ((nr = recvmsg(fd, tmsg, 0)) < 0) { err一sys("recvmsg error”)；
+} else if (nr == 0) {
+err一 ret ( "connection closed by server”； return(-1)；
+}
+*	See if this is the final data with null & status. Null
+*	is next to last byte of buffer； status byte is last byte.
+*	Zero status means there is a file descriptor to receive.
+*/
+for (ptr = buf； ptr < &buf[nr]； ) { if (*ptr++ == 0) {
+if (ptr != &buf[nr-1])
+err_dump("message format error")； status = *ptr & OxFF； /* prevent sign extension */ if (status == 0) {
+if (msg.msgcontrollen != CONTROLLEN) err一 dump ("status = 0 but no fd”； newfd = *(int *)CMSG_DATA(cmptr)；
+} else {
+newfd = -status；
+if (nr > 0 (*userfunc)(STDERR一FILENO, buf, nr)
+return(-1)；
+if (status >= 0) /* final data has arrived */ return(newfd)； /* descriptor, or -status */
+nr)
+注意，该程序总是准备接收一描述符(在每次调用recvmsg之前，设置msg_control和 msg—controllen)，但是仅当在返回时，msg_controllen非0,才确实接收到一描述符。 在传送文件描述符方面，UNIX域套接字和STREAMS管道之间的一个区别是，用 STREAMS管道时我们得到发送进程的身份。某些UNIX域套接字版本提供类似的功能，但它们 的接口不同。
+FreeBSD 5.2.1和Linux 2.4.22支持在UNIX域套接字上发送凭证，但实现方式不同。Mac OS 10.3是 部分地从FreeBSD派生出来的，但禁止传送梵证。Solaris 9不支持在UNIX域套接字上传送梵证，
+在FreeBSD,将凭证作为cmsgcred结构传送。
+
+ 
+sender's process ID */ sender's real UID */ sender's effective UID sender's real GID */ nurnber of groups */ groups */
+当传送凭证时，仅需为cmsgcred结构保留存储空间。内核将填充该结构以防止应用程序 伪装成具有另一种身份。 在Linux中，将凭证作为ucred结构传送。
+struct ucred {
+uint32_		pid;	/*	sender's	process	ID */
+uint32~		uid;	/*	sender^s	user ID	*/
+uint32_		gid；	/*	sender^ s	group ID	*/
+不同于FreeBSD的是，Linux要求在传送前先将结构初始化。内核将确保应用程序使用对应
+于调用程序的值，或具有适当的权限使用其他值。
+程序清单17-16显示了更新后的send_fd函数，它包含了传送进程的凭证。
+	程序清单17-16在UNIX域套接字上发送凭证		
+#include "apue.h"
+#include <sys/socket.h>
+#if defined(SCM一CREDS)	/* BSD interface */
+#define CREDSTRUCT	cmsgcred
+#define SCM_CREDTYPE SCM 一CREDS
+#elif defined{SCM—CREDENTIALS} /* Linux interface */
+#define CREDSTRUCT	ucred
+#define SCMCREDTYPE SCM—CREDENTIALS
+#else
+枠error passing credentials is unsupported!
+#endif
+/* size of control buffer to send/recv one file descriptor */
+#define RIGHTSLEN CMSG_LEN(sizeof(int))
+#define CREDSLEN CMSG_LEN(sizeof(struct
+#define CONTROLLEN (RIGHTSLEN + CREDSLEN)
+CREDSTRUCT))
+static struct cmsghdr *cmptr = NULL； /* malloc*ed first time */ /*
+*	Pass a file descriptor to another process.
+*	If fd<0, then -fd is sent back instead as the error status.
+*/
+int
+send—fd(int fd, int fd to send)
+struct CREDSTRUCT	*credp；
+struct cmsghdr	*cmp;
+struct iovec	iov[1]；
+struct msghdr	msg；
+char	buf[23;
+iov[0]♦iov 一 base =	buf;
+iov[0].iov len s	2;
+/* send_fd/recv_ufd 2-byte protocol */
+490 第17章高级进程间通信
+#define CMGROUP MAX 16
+/*
+/*
+/*
+/*
+/*
+0
+J
+s [ p s ; up •/ •/d/ ou d d i d r o i i u i 9 r
+Lydgs
+eeeeee d r r r r r r e c c c c c c r m m m m m m c c c c c c c g
+Itt-t-t-rtt_
+d d d d o d
+t i i i .X'h i
+c p u ugsg
+
+ 
+17.4传送文件描述符 491
+nonzero status means error */
+*/
+msg.msg_iov	= iov；
+msg.msg_iovlen = 1；
+msg,msg一name = NULL?
+msg.msg_namelen = 0；
+msg.msg_flags = 0;
+if (fd—to—send < 0) {
+msg.msg—cont rol = NULL；
+msg.msg_controllen = 0 ?
+buf[1] = -fd一to一send; /*
+if (buf [1] =: 0)
+buf[1] - 1； /* -256, etc. would screw up protocol
+} else {
+if (cmptr =: NULL && (cmptr = malloc(CONTROLLEN)) == NULL)
+return(-1)；
+msg.msg—control = cmptr；
+msg.msg_controllen = CONTROLLEN；
+cmp - cmptr；
+cmp->cmsg_level = SOL_SOCKET；
+cmp->cmsg_type = SCM一RIGHTS;
+cmp->cmsg_len = RIGHTSLEN；
+*(int CMSG—DATA(cmp) = fd_to_send; /* the fd to pass */
+cmp - CMSG_NXTHDR{&msg, cmp)；
+cmp->cmsg—level = SOL—SOCKET;
+cmp->cmsg 一type = SCM 一CREDTYPE;
+cmp->cmsg_len = CREDSLEN?
+credp = (struct CREDSTRUCT *}CMSG—DATA(cmp);
+#if defined(SCM_CREDENTIALS)	~
+credp->uid = geteuid()；
+credp->gid = getegid()；
+credp->pid = getpid();
+#endif
+buf [1] * 0;	/* zero status means OK */
+buf [0] = 0； if (sendmsg{fd, return(-1)； return(0);
+/* null byte flag to recv_ufd()
+Stmsg, 0) != 2)
+注意，只是在Linux上才需要初始化凭证结构。	、 程序清单17-17中的recv_ufd函数是recv_fd的修改版，它通过一引用参数返回发送者 的用户ID。
+	程序清单17-17在UNIX域套接字上接收凭证	
+#include "apue.h"
+#	include <sys/socket,h> /* struct msghdr */
+#include <sys/un.h>
+#if defined(SCM—CREDS)	/* BSD interface */
+#define CREDSTRUCT	cmsgcred
+#define CR_UID	cmcred_uid
+#define CREDOPT	LOCAL_PEERCRED
+#define SCM^CREDTYPE SCM_CREDS
+#elif defined(SCM—CREDENTIALS} /* Linux interface */
+#define CREDSTRUCT	ucred
+#define CR_UID	uid
+#define CREDOPT	SO_PASSCRED
+#define SCM CREDTYPE SCM CREDENTIALS
+
+ 
+492 第17幸高级进程间通信
+#else
+#error passing credentials is unsupported!
+#endif
+/* size of control buffer to send/recv one file descriptor */ #define RIGHTSLEN CMSG_LEN(sizeof(int”
+#define CREDSLEN CMSG_LEN(sizeof{struct CREDSTRUCT)) #define CONTROLLEN (RIGHTSLEN + CREDSLEN)
+static struct cmsghdr
+►cmptr
+NULL;
+/* malloc'ed first time */
+*	Receive a file descriptor from a server process. Also, any data
+*	received is passed to (*userfunc)(STDERR—FILENO, buf, nbytes).
+*	We have a 2-byte protocol for receiving the fd from send_fd{).
+int
+recv_ufd(int fd, uid_t *uidptr,
+ssize t (*userfunc)(int,
+const void *• size t))
+struct cmsghdr
+struct CREDSTRUCT
+int
+char
+char
+struct iovec struct msghdr const int
+*cmp；
+★credp;
+newfd, nr
+*ptr；
+buf[MAXLINE] iov[l]; msg； on = 1;
+status；
+status = -1； newfd 二 ~l；
+if (setsockopt(fd# SOL_SOCKET# CREDOPT, &on, sizeof(int)) < 0) { err_ret{"setsockopt failed")； return(-1);
+for
+iov[0].iov—base = buf;
+iov[0].iov 一len = sizeof(buf)；
+msg.msg_iov = iov?
+msg.msg_iovlen = 1;
+msg•msg_name = NULL；
+msg.msg—namelen = 0;
+if (cmptr == NULL && (cmptr = malloc(CONTROLLEN))
+return(-1)；
+msg.msg_control = cmptr；
+msg.msg_controllen = CONTROLLEN；
+if ((nr = recvmsg(fd, &msg, 0)) < 0) {
+err—sys("recvmsg error")；
+} else if (nr == 0) {
+errjret("connection closed by server")； return(-1)；
+NULL)
+*	See if this is the final data with null & status. Null
+*	is next to last byte of buffer； status byte is last byte.
+*	Zero status means there is a file descriptor to receive. */
+for {ptr = buf； ptr < &buf[nr]； ) { if (*ptr++ == 0) {
+if (ptr ! = &buf [nr-1])
+err_dump("message format error")； status = *ptr & OxFF； /* prevent sign extension */
+
+ 
+17.5 open服务器版本1 493
+if (status == 0) {
+if (msg.msg一controllen != CONTROLLEN) err_dump("status = 0 but no fd"};
+/* process the control data */ for (cmp = CMSG—FIRSTHDR(&msg);
+cmp != NULL； cmp = CMSG_NXTHDR{&msg, cmp)) { if (cmp->cmsg_leve1 != SOL—SOCKET} continue; switch {cmp->cmsg_type) { case SCM 一 RIGHTS: 一
+newfd : *(int *)CMSG_DATA{cmp); break； case SCM_CREDTYPE：
+credp = (struct CREDSTRUCT *)CMSG_DATA(cmp) ♦uidptr = credp->CR 一 UID;
+} ~
+}
+} else {
+newfd = -status；
+if (nr > 0 && (*userfunc)(STDERR_FILENO, buf, nr) !二 nr) return(-1)；
+if (status >= 0) /* final data has arrived */ return(newfd); /* descriptor, or -status */
+}
+在FreeBSD上，我们指定SCM_CREDS来传送凭证,在Linux上，则使用SCM_CRE：DENTIALS。
+17.5	open服务器版本1
+使用文件描述符传送技术，我们开发了一个open服务器：一个由一个进程执行以打开一个 或几个文件的程序。该服务器不是将文件内容送回调用进程，而是送回一个打开文件描述符。 这使该服务器对任何类型的文件(例如一个设备或套接字)而不单是普通文件都能起作用。这 也意味着，用IPC交换了最小量的信息——从客户进程到服务器进程传送文件名和打开模式， 而从服务器进程到客户进程返回描述符。文件内容不需用IPC传送。
+将服务器设计成一个单独的可执行程序(或者是由客户进程执行的，如本节所述，或者是 一个守护服务器，我们将在下一节开发)，有很多优点：
+•任一客户进程都易于和服务器进程联系，这类似于客户进程调用一库函数。不需要将一 特定服务硬编码到应用程序中，而是设计一种可供重用的设施。
+•如若需要更改服务器，那么也只影响一个程序。相反，更新一库函数可能要更改调用此 库函数的所有程序(用连编程序重新连接)。共享库函数可以简化这种更新(7.7节)。
+•服务器可以是设置用户ID程序，于是使其具有客户进程没有的附加权限。注意，一个库 函数(或共享库函数)不能提供这种能力。
+客户进程创建一个s管道(或者是一个基于STREAMS的管道，或者是UNIX域套接字对), 然后调用fork和exec以调用服务器进程。客户进程经s管道发送请求，服务器进程经s管道回 送响应。
+
+ 
+494 第17幸高级进程间通信
+定义客户进程和服务器进程间的应用程序协议如下：
+(1)	客户进程通过s管道向服务器进程发送“open	<pathname> <openmode>\On形式的请 求，<0/>«»»0办>是0?611函数的第二个参数，以ASCII十进制数表示。该请求字符串以mill字节 结尾。
+(2)	服务器进程调用send_fd或Send_err回送一打开描述符或一条出错消息。
+下面是一个进程向其父进程发送一打开描述符的实例。17.6节将修改此实例，使其使用一 个守护服务器进程，它将一个描述符发送给一个完全无关的进程。
+程序清单17-18是头文件open.h,它包括标准头文件，并且定义了各个函数原型。
+程序清单17-18 open.h头文件
+include "apue.h"
+#include <errno.h>
+#define CL_OPEN "open"	/* client's request for server */
+int csopen{char *, int)；
+程序清单17-19是main函数，其中包含一个循环，它先从标准输入读一个路径名，然后将 该文件复制至标准输出。它调用csopen以与open服务器进程联系，从其返回一个打开描述符。
+	程序清单17-19客户进程main函数版本1	
+#include "open.h"
+#include <fcntl.h>
+#define BUFFSIZE 8192
+int
+main(int argc, char *argv[])
+{
+int n, fd；
+char buf [BUFFSIZE], line[MAXLINE]；
+/* read filename to cat from stdin */ while (fgets(line, MAXLINE, stdin) U NULL) { if (line [strlen(line) - 1] == ,\n'}
+line [strlen(line) - 1] = 0; /* replace newline with null */
+/* open the file */
+if ((fd » csopen(line/ 0_RD0NLY)) < o)
+continue； /* csopen() prints error from server */
+/* and cat to stdout */
+while ((n * read(fd, buf, BUFFSIZE)) > 0) if (write(STDOUT_FILENO/ buf, n) != n) err_sys("write error"); if (n < 0)
+err—sys{"read error")； close(fd)；
+}
+exit(0)；
+程序清单17-20是函数csopen,它先创建一个s管道，然后进行服务器进程的fork和exec 操作。
+
+ 
+17.5 open服务器版本1 495
+程序请单17-20 csopen函数版本1
+#include
+#include
+"open.h" <sys/uio.h>
+/* struct iovec */
+Open the file by sending the "name” and Moflag" to the connection server and reading a file descriptor back.
+int
+csopen{char *name, {
+pidj:
+int
+char
+struct iovec static int
+int oflag)
+pid;
+len；
+buf [10]；
+iov [3]；
+fd[2]
+{ -1, -1 }；
+if
+(fd[0] < 0) { /*
+if (s_pipe(fd) < 0)
+err_sys(” s_pipe error")
+if ((pid = fork()) < 0) {
+err—sys{"fork error")；
+} else if (pid == 0) {
+close{fd[0])；
+if (fd[l] !=
+dup2(fd [1]
+err_sys{
+if (fd[l] !=
+dup2(fd[1]
+err_sys(
+if (execl(n
+fork/exec our open server first time */
+/* child */
+STDIN一FILENO &&
+STDIN 一FILENO} != STDIN—FILENO} dup2 error to stdin”；
+STDOUT—FILENO &&
+STDOUT 一FILENO} != STDOUT_FILENO) dup2 error to stdout");
+/opend,1, u op end", (char *) 0) < 0)
+err_sys("execl error"};
+close{fd[1]),
+/* parent */
+sprintf(buf,
+iov[0].iov 一 base
+iov[0〕 .iov 一len
+iov[1].iov—base
+iov[1].iov—len
+iov[2].iov_base
+iov[2].iov len
+%d»
+oflag)；	/* oflag to ascii */
+CL 一 OPEN " "；	/* string concatenation */
+strlen(CL一OPEN} +1;
+name ；
+strlen(name}；
+buf ；
+strlen(buf) + 1； /* +1 for null at end of buf
+len = iov[0].iov 一len + iov[1]•iov 一len + iov[2]•iov_len;
+if (writev(fd[0], &iov[0], 3) != len)	一
+err_sys{"writev error”};
+/* read descriptor, returned errors handled by write。 */
+•return (recv一fd(fd [0] , write));
+子进程关闭管道的一端，父进程关闭另一端。作为服务器进程，子进程也将管道的一端复 制到其标准输入和标准输出。(另一种备选方案是将描述符fd [ 1 ]的ASCII表示形式作为一个参 数传送给服务器进程。) 父进程将请求发送给服务器进程，请求中包含路径名和打开模式。最后，父进程调用 recv_fd返回描述符或错误消息。如果服务器进程返回一错误消息，那么，父进程调用write, 向标准出错输出该消息。 现在，观察open服务器进程。其程序是opend,它由子进程执行(见程序清单17-20)。先
+
+ 
+496 第17幸高级进程间通信
+观察opend.h头文件(见程序清单17-21),它包括了标准头文件，并且声明了全局变量和函数 原型。
+程序清单17-21 ppend.h头文件版本1
+#include "apue.h” #include <errno.h>
+#define CL一OPEN "open"		/* client's request for server */
+extern	char	errmsg []；	/*	error message string to return to client
+extern	int	oflag；	/*	open{) flag： 0_xxx ... */
+extern	char	★pathname；	/*	of file to open() for client */
+int	cli	一args(int,	char **)；
+void	request{char	*, int, int);
+main函数(程序清单1?-22)经s管道(它的标准输入)读来自客户进程的请求，然后调用
+函数 request。
+	程序清单17-22服务器进程main函数版本1	
+^include "opend.h"
+char errmsg[MAXLINE]； int	oflag；
+char ^pathname；
+int
+main(void)
+{
+int nread；
+char buf[MAXLINE]；
+for ( ; ; ) { /* read arg buffer from client, process request */ if ((nread = read(STDIN_FILENO, buf, MAXLINE)) < 0) err 一 sys (•• read error on stream pipe1’}; else if (nread == 0)
+brealc；	/* client has closed the stream pipe */
+request(buf, nread, STDOUT—FILENO>;
+exit(0);
+程序清单n-23中的reguest函数承担了全部工作。它调用函数buf_args将客户进程请 求分解成标准argv型的参数表，然后调用函数cli_args处理客户进程的参数。如果一切正常， 则调用open打开相应文件，接着调用send_fd,经由s管道(它的标准输出)将描述符回送给 客户进程。如果出错则调用send_err回送一则出错消息，其中使用了前面说明的客户进程- 服务器进程协议。
+程序清单17_23 request函数版本1
+#include "opend.h"
+#include <fcntl.h>
+void
+request(char *buf# int nread, int fd)
+{
+int newfd；
+
+ 
+17.5 open服务器版本1 497
+if (buf[nread-1] != 0) {
+sprintf(errmsg, "request not
+nread, nread, buf);
+send一err(fd, -1, errmsg);
+return；
+null terminated： %*.*s\n"
+if (buf_args{buf, cli_args) < 0)
+send_err(fd, -1, errmsg)；
+return；
+{ /* parse args & set options */
+if ((newfd = open(pathname, oflag)) < 0) {
+sprintf(errmsg, "can't open %s： %s\n", pathname, strerror(errno))； send—err(fd, -1, errmsg)； return；
+if (send_fd{fd, newfd) < 0)	/* send the descriptor */
+err一sys(Msend_fd error")； close(newfd)；	/* we're done with descriptor */
+客户进程请求是一个以null结尾的字符串，它所包含的各参数由空格分隔。程序清单17-24 中的buf_args函数将字符串分解成标准argv型参数表，并调用用户函数处理参数。本节稍后 将用到该函数。我们使用ISO C函数strtok将字符串分割成参数。
+程序清单17-24 buf_argS函数
+#include "apue.h"
+#define MAXARGC 50 /* max number of arguments in buf */
+#define WHITE " \t\n" /* white space for tokenizing arguments */
+/★
+*	buf[] contains white- space- separated arguments. We convert it to an
+*	argv-style array of pointers, and call the user^ s function (optfunc)
+*	to process the array. We return -1 if there's a problem parsing buf,
+*	else we return whatever optfunc() returns. Note that user,s buf []
+*	array is modified (nulls placed after each token)•
+*/
+buf_args{char *buf, int (*optfunc)(int# char **})
+{ 一
+char *ptr# * argv [MAXARGC]; int argc；
+if {strtok(buf, WHITE) == NULL) /* an argv[0] is required */ return(-1)； argv[argc = 0] = buf;
+while ((ptr = strtok{NULL, WHITE)) != NULL) {
+if (++argc >* MAXARGC-1) /* -l for room for NULL at end */ return(-1)； argv[argc] = ptr；
+}
+argv[++argc] = NULL;
+/*
+*	Since argv[] pointers point into the userf s buf [],
+*	user's function can just copy the pointers, even
+*	though argv[] array will disappear on return.
+
+ 
+498 第17章高级进程间通信
+1 return((*optfunc){argc, argv))；
+buf_args调用的服务器函数是cii_args (见程序清单17_25)。它验证客户进程发送的 参数个数是否正确，然后将路径名和打开模式存放在全局变量中。
+程序清单17-25 cli__args函数
+#include "opend.h"
+*	This function is called by buf一args0, which is called by
+*	request(}• buf_args{) has broken up the client's buffer ★yinto an argv[]-style array, which we now process.
+int
+cli_args(int argc, char “argv}
+if (argc != 3 || strcmp(argv[0]f CL—OPEN} != 0) { strcpy(errmsg, "usage： <pathname> <oflag>\nH)； return卜1}；
+}
+pathname = argv[1]； /* save ptr to pathname to open */ oflag - atoi{argv[2])； return(0)；
+这样由客户进程执行fork和exec而调用的open服务器就完成了。在fork之前创建了一个 s管道，然后客户进程和服务器进程用它进行通信。在这种安排下，每个客户进程都有一服务 器进程。
+17.6 open服务器版本2
+_ ^上一节中’我们开发了一个open服务器’客户进程调用fork和exec来调用该服务器， 它演示了如何从子进程向父进程传送文件描述符。本节将开发一个以守护进程方式运行的open 服务器。用一个服务器进程处理所有客户进程的请求。这一设计应该更加有效，因为没有使用 fork和exec。在客户进程和服务器进程之间仍使用s管道，来演示在无关进程之间如何传送文 件描述符。我们仍将使用17.2.2节说明的三个函数：serv_listen、Serv_accept和 cli_conn。这一服务器还将展示了一个服务器进程如何向多个客户进程提供服务，其中使用 了I4.5节中介绍过的select和poll函数。
+本节所述的客户进程类似于H.5节。确实，文件main.c是完全相同的(见程序清单17-19)。 在open.h头文件(见程序清单n-18)中则加了下面一行：
+#define CS_0PEN "/home/sar/opend" /* server's well-known name */
+因为在这里调用的是cli_conn而非fork和exec,所以文件open, c与程序清单17-20中的不 同。这示于程序清单17-26中。
+			程序清单17-26 csopen函数第2版
+#include "open.h"
+#include <sys/uio.h> /* struct iovec */
+
+ 
+17.6 open服务器版本2 499
+cli_args{int, char **); client—add(int, uid—t}; client一del(int); loop(void)；
+request(char *, int, int, uid t)；
+nonzero if interactive (not daemon) */ error message string to return to client */ open flag： 0_xxx ..♦ */ of file to open for client */
+extern int debug; extern char errmsg[]; extern int oflag； extern char *pathname；
+typedef struct {
+int fd；
+uid—t uid；
+} Client；
+extern Client
+extern int
+/* one Client struct per connected client */ /* fd# or -1 if available */
+★client;	/* ptr to malloc'ed array */
+client size； /* # entries in client[] array */
+*	Open the file by sending the "name1* and "oflag" to the
+*	connection server and reading a file descriptor back.
+*/
+int
+csopen{char *name, int oflag}
+{
+int	len;
+char	buf CIO]；
+struct iovec iov[3]； static int	csfd = -1;
+if (csfd < 0) {	/* open connection to conn server */
+if ((csfd = cli conn{CS OPEN)) < 0)
+err_sys (" cli_conn error11)；
+sprintf(buf, " %d"
+iov[0].iov 一base
+iov[0].iov_len
+iov[1].iov 一 base
+iov[1].iov_len
+iov[2].iov—base
+iov[2].iov len
+oflag)；	/* oflag to ascii */
+CL_OPEN "	/* string concatenation */
+strlen(CL一 OPEN) + l；
+name ；
+strlen(name)；
+buf;
+_	strlen(buf) +1; /* null always sent */
+len = iov[0].iov_Xen + iov[l].iov 一len + iov[2].iov 一len;
+if (writev(csfd, &iov[0], 3) != len)
+err_sys{"writev error"};
+/* read back descriptor; returned errors handled by write。 */
+return(recv fd(csfd, write))；
+从客户进程到服务器进程所使用的协议仍然相同。 我们再来看服务器进程。头文件opend.h (见程序清单17-27)包括了标准头文件，并且 声明了全局变量和函数原型。
+程序清单17-27 ppen.h头文件版本2
+#include "apue.h"
+#include <errno.h>
+#define CS一 OPEN n/home/sar/opend" #define CL OPEN "open"
+/* well-known name */
+/* client's request for server */
+t t i i i n n o o o
+r
+/*
+/*
+/★
+
+ 
+500 第17幸高级进程间通信
+因为此服务器进程处理所有客户进程，所以它必须保存毎个客户进程连接的状态。这是用 opend.h头文件中声明的client数组实现的。程序清单17-28定义了三个操纵此数组的函数。
+	程序清单17-28操纵client数组的三个函数	
+#inc1ude Hopend.h”
+#define NALLOC 10	/* # client structs to alloc/realloc for ★/
+static void
+client—alloc(void)	/★ alloc more entries in the client[] array */
+{ 一
+int i;
+if (client == NULL)
+client = malloc(NALLOC ★ sizeof(Client));
+else
+client = realloc(client, (client一size+NALLOC)*sizeof(Client)); if (client == NULL)
+err一sys("canrt alloc for client array");
+/* initialize the new entries */
+for (i = client_size； i < client_size + NALLOC; i++)
+client[i].fd = -1； /* fd of -1 means entry available ★/
+client_size += NALLOC;
+} *
+/*
+*	Called by loop() when connection request from a new client arrives.
+*/
+int
+client_add(int fd, uid_t uid)
+{ " ~
+int i ；
+if (client =- NULL)	/* first time we're called ★/
+client alloc();
+again： for
+(i = 0； i < client一size; i++) {
+if (client[i].fd == -1) { /* find an available entry */
+client[i].fd = fd；
+client[i].uid = uid；
+return(i)； /* return
+/* client array full, time to
+client_alloc()；
+goto again；	/* and search
+index in client [] array */
+realloc for more */
+again (will work this time) ★/
+Called by loop() when we're done with a client.
+(int fd)
+void
+client del
+int
+for
+(i - 0； i < client__size； i++) {
+if (client[i]•fd =- fd) {
+client[i].fd = -1;
+return；
+
+ 
+17.6 open服务器版本2 501
+log一quit("can*t find client entry for fd %drt, fd)；
+第一次调用client_add时，它调用client_alloc, client_alloc又调用malloc为 该数组的10个登记项分配空间。在这10个登记项全部用完后，如若再调用client_add，那么 在clientjlloc函数中将调用realloc,由该函数分配附加空间。依靠这种动态空间分配， 我们无需将编译时client数组的长度限定为某个估计值，并将该值写入头文件。如果出错, 那么因为假定服务器进程是守护进程，所以这些函数调用109_函数(见附录B)。
+main函数(见程序清单17-29)定义全局变量，处理命令行选项，然后调用loop函数。如 果以-d选项调用服务器进程，则它以交互方式运行而不是守护进程。当测试些服务器进程时， 使用交互运行方式。
+	程序清单17-29服务器进程main函数版本2	
+#include "opend.h"
+#include <syslog.h>
+int	debug, oflag, client一size, log_to__stderr;
+char errmsg[MAXLINE]； char ★pathname;
+Client *client = NULL;
+int
+main(int argc, char *argv[])
+{
+int c ;
+log_open("open.serv"# L0G_PID, LOG一USER);
+opterr =0; /* don,t want getopt() writing to stderr ★/ while ((c = getopt(argc, argv, "d")) != EOF) { switch (c) {
+case :	/★ debug */
+debug = log一to一stderr = 1； break；
+case • ?• ••
+err_quit("unrecognized option： -%cH, optopt)；
+if (debug == 0)
+daemonize("opend")；
+loop()； /* never returns */ i	
+loop函数是服务器进程的无限循环。我们将给出该函数的两种版本。程序清单17-30是使 用select的一种版本，程序清单17-31是使用poll的另一种版本。
+	程序清单17_30使用select的loop函数	
+#include "opend.h"
+#include <sys/time,h>
+#include <sys/select.h>
+
+ 
+502 第17幸高级进程间通信
+void
+loop(void) {
+int char uid一 t fd set
+i, n, maxfd, maxi, listenfd, clifd, nread;
+buf[MAXLINE];
+uid;
+rset, allset;
+FD_ZERO(&allset);
+/* obtain fd to listen for client requests on */ if ((listenfd = serv一listen(CS_0PEN)} < 0) log_sys("serv_listen error");
+FD一SET(listenfd, &allset); maxfd = listenfd; maxi = -1;
+for ( ; ; ) {
+rset = allset; /★ rset gets modified each time around */ if ((n = select(maxfd + 1, &rset, NULL, NULL, NULL)) < 0) log_sys(nselect error")；
+if (FD_ISSET(listenfd, &rset)) {
+/* accept new client request */ if ((clifd = serv_accept(listenfd, &uid)) < 0) log_sys("曰erv_accept error: %dn, clifd)； i = client_add(clifd, uid)；
+FD 一SET(clifd, &allset)； if (clifd > maxfd)
+maxfd = clifd； /* max fd for select() */ if (i > maxi)
+maxi = i; /* max index in client[] array */ log—msg("new connection： uid %d, fd %dn, uid, clifd)； continue；
+for
+(i
+if
+if
+=0; i <= maxi; i++) { /* go through client[] array */ ((clifd = client[i].fd) < 0) continue?
+(FD_ISSET(clifd, &rset)) {
+/* read argument buffer from client */ if ((nread = read(clifd, buf, MAXLINE)) < 0) { log_sys("read error on fd %d", clifd);
+} else if (nread == 0) {
+log—msg("closed: uid %d, fd %dn, client[i].uid, clifd)； client_del(clifd); /* client has closed cxn ★/ FD_CLRTclifd# &allset); close(clifd)；
+} else { /* process client#s request */
+request(buf, nread, clifd, client[i].uid);
+此函数调用serv_listen创建服务器进程对于客户进程连接的端点。此函数的其余部分 是一个循环，它从select调用开始。在select返回后，可能发生下列两种情况： (1)描述符listenfd可能准备好读’这意味着新客户进程已调用了cli_conn。为了处理这
+
+ 
+17.6 open服务器版本2 503
+种情况，我们将调用serv_aCCept,然后为新客户进程更新client数组以及相关的簿记消息。 (跟踪记录作为select第一个参数的最髙描述符编号，也记下client数组中用到的最大下标。) (2)	一个现存的客户进程的连接可能准备好读。这意味着该客户进程已经终止，或者已经 发送了一个新请求。如果read返回0 (文件结束)，则可认为一客户进程终止。如果read返回 值大于0则可判定有一新请求等待处理，调用request处理此新的客户进程请求。 用allset描述符集跟踪当前使用的描述符。当新客户进程连至服务器进程时，此描述符 集的某个适当位被打开。当该客户进程终止时，这个位就被关闭。 因为客户进程的所有描述符(包括与服务器进程的连接)都由内核自动关闭，所以我们总 能知道什么时候一客户进程终止，该终止是否自愿。这与XSIIPC机制不同。 使用poll的loop函数示于程序清单17-31中。
+程序清单17-31使用poll的loop函数
+#include "opend.h"
+#include <poll.h>
+#if 'defined(BSD) && !defined(MACOS)
+#include <stropts.h>
+#endif
+void
+loop(void)
+{
+int
+char
+uid_t
+struct pollfd
+if ((pollfd = malloc(open_max() * sizeof(struct pollfd))) =* NULL)
+err_sys("malloc error"};
+/* obtain fd to listen for client requests on */
+if ((listenfd = serv一listen(CS-OPEN)) < 0)
+log_sys(Mserv_listen error"};
+client一add(listenfd, 0)? /* we use [0] for listenfd ★/
+pollfd [0].fd = listenfd；
+pollfd[0].events » POLLIN；
+maxi = 0；
+for ( ; ? ) {
+if (poll(pollfd, maxi + 1, -1) < 0)
+log一sys("poll error")；
+if (pollfd[0].revents & POLLIN) {
+/* accept new client request */
+if ((clifd = serv_accept(listenfd, &uid)) < 0)
+log一sys("serv一accept error： %dn, clifd);
+i = client_add(clifd, uid);
+pollfd [i] . fd = clifd,-
+pollfd[i].events = POLLIN;
+if (i > maxi)
+maxi = i;
+log_msg("new connection： uid %d# fd %d", uid, clifd);
+} "
+for (i = 1； i <= maxi； i++) {
+if ((clifd = client[i].fd) < 0) continue； if (pollfd[i].revents & POLLHUP) {
+i, maxi, listenfd, clifd, nread;
+buf[MAXLINE];
+uid;
+★pollfd;
+
+ 
+504 第17幸高级进程间通信
+goto hungup;
+} else if (pollfd[i].revents & POLLIN) {
+/* read argument buffer from client ★/ if ((nread - read(clifd, buf, MAXLINE)) < 0) { log_sys ("read error on fd %d,( # clifd);
+} else if (nread == 0) {
+hungup：
+log_msg("closed： uid %d, fd %dn, client[i].uid, clifd)； client_del(clifd); /* client has closed conn */
+pollfdTi].fd = -1; close(clifd)；
+} else {	/* process client's request ★/
+request(buf, nread, clifd, client[i].uid);
+}
+为使客户进程数量能与打开描述符的数量相当，我们动态地为pollfd结构的数组分配空间 (参见程序清单2-4中的函数open_max)。
+client数组中下标号为0的登记项用于listenfd描述符。于是，client数组中的客户 进程下标号与pollfd数组中所用的下标号相同。新客户进程连接的到达由listenfd描述符 中的E>0LLIN指示。如同前述，调用serv_accept以接收该连接。
+对于一个现存的客户进程，我们应当处理来自poll的两个不同事件：由P0LLHUP指示的 客户进程终止；由P0LLIN指示的来自现存客户进程的一个新请求。回忆习题15.7，在流还有 数据可读时，挂起消息可能到达流首。对于管道，我们希望在处理挂起前先读所有数据。但是 对于服务器进程，当从客户进程接收到挂起消息时，它可以用close关闭至客户进程的连接 (流)，于是也就丢弃了仍在流上的所有数据。因为已经不能回送任何响应，所以也就没有理由 再去处理仍在流上的任何请求。
+如同此函数的select版本，我们调用request函数处理来自客户进程的新请求(程序清 单17-32)。此函数类似于其早期版本(程序清单17-23)。它调用同一函数buf_args (程序清 单17-24)，后者又调用cli _args (程序清单17-25)，但是因为它是在~*个守护进程中运彳了的， 所以出错消息是在日志文件中记录，而不是在标准出错流上打印。
+程序清单17-32 request函数版本2
+#	include "opend.h"
+#include <fcntl.h>
+void
+request(char *buf, int nread, int clifd, uid t uid)
+{ _ int newfd；
+if (buf[nread-1] != 0) { sprintf(errmsg,
+"request from uid %d not null terminated： %*.*s\nH, uid, nread, nread, buf); send_err(clifd, -1, errmsg)； return?
+
+ 
+17.7 小 结 505
+log_msg("request: %s, from uid %d", buf, uid)；
+/* parse the arguments, set options */ if (buf_args(buf, cli_args) < 0) { send_err(clifd, -1, errmsg); log_msg(errmsg); return;
+if ((newfd = open(pathname, oflag)) < 0) { sprintf(errmsg, "can1t open %s: %s\n", pathname, strerror(errno));
+曰end一err(clifd, -1, errmsg)；
+log_msg(errmsg)；
+return；
+/* send the descriptor */ if (send—fd(clifd, newfd) < 0) log_sys("send一fd error")； log_msg("sent fd %d over fd %d for %s", newfd, clifd, pathname); close(newfd);	/* we're done with descriptor */
+}
+这样就完成了open服务器进程版本2，它使用单个守护进程处理所有的客户进程请求。
+17.7小结
+本章的重点是如何实现在进程间传送文件描述符，以及怎样使服务器进程接受来自众多客 户进程的唯一连接。本章说明了如何使用基于STREAMS的管道以及UNIX域套接字实现这些功 能。虽然所有平台都支持UNIX域套接字(参见表15-1),但是各种实现都有不同之处，这使我 们很难开发可移植的应用程序。
+本章给出了open服务器进程的两个版本。一个版本由客户进程用fork和exec直接调用， 另一版本是处理所有客户进程请求的守护服务器进程。这两个版本均采用文件描述符传送和接 收函数。后一版本还采用了 17.2.2节所述的客户进程-服务器进程连接函数以及14.5节所述的 I/O多路转接函数。
+习题
+17.1改写程序清单17-1，对于STREAMS管道使用标准I/O库函数代替read和write。
+17.2使用本章说明的文件描述符传送函数以及8.9节中说明的父-子进程同步例程，编写具有 下列功能的程序：该程序调用fork，然后子进程用open打开一现存文件并将打开文件 描述符传送给父进程。接着，子进程调用lseek确定该文件当前读、写位置，并通知父 进程。父进程读该文件的当前偏移量，并打印它以便验证。若此文件如上所述从子进程 传递到父进程，则父、子进程应共享同一文件表项，所以当子进程毎次更改该文件当前 偏移量，都会同样影响到父进程的描述符。使子进程将该文件定位至一个不同的偏移量, 并再次通知父进程。
+17.3程序清单17-21和17-22分别定义和声明了全局变量，两者的区别是什么？
+17.4改写buf_args函数(见程序清单17-24),删除其中对argv数组长度的编译时间限制。
+请用动态存储分配。
+17.5说明优化程序清单17-30和17-31中loop函数的方法，并实现之。
+[628]
+1629]
+
+ 
+
+ 
+

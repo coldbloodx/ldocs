@@ -1,0 +1,94 @@
+04.11
+1. There are two presentations
+a. For BU, WuXi, and Xi'an --> PCM basic (Slide name: PCM overview)
+b. For xi'an Local --> PCM advance (Slide name: PCM Internals)
+
+2. Presentation scope
+PCM Overview: undetermined -->TBD, Qing will give me scope today or tomorrow.
+    a. PCM 4.1 feature list
+    b. Architecture
+    c. Key concept
+    d. Hardware management and monitor
+    e. HPC --> kit
+    f. GMF --> Yingqiu Deng
+
+PCM Internals: 
+a. XCAT architecture
+    Plugin based architecturew
+    Generic provision workflow
+
+b  PCM architecture
+    Implement as set of plugins, some xcat features are enhanced
+        Image profile
+        Network profile
+        Hardware profile
+        OS distro update
+
+c. PCM GUI introduce
+    Java API
+    GUI Components
+
+d. PCM Special features
+    monitor:
+        chassis
+        switch
+        GPFS
+        Ethernet (will support soon)
+
+e. HPC Kit related contents
+    LSF
+    Symphony
+    Nagios
+    Cacti
+    Ofed
+    Ganglia
+    CUDA
+
+
+04.09
+initial draft.
+
+----
+section 1: overview
+
+0. design concept
+    
+
+
+1. feature list for kusu/fujitsu_ce/xcat/pcm4.1
+
+2. system architecture 
+    a. network topologic architecture
+    b. software architecture
+
+3. key concepts
+    a. Node group
+    b. Repository
+    c. Kit
+    d. Component
+    e. Network
+    f. Provision template
+    g. Network template
+    h. Image template
+    i. Hardware template
+    j. Scripts 
+
+details 
+1. provision 
+    a. package based provision
+    b. image based provision (disked/diskless/disklite(nfsroot))
+2. file sync  
+3. status udpate
+4. naming resolution
+5. time sync
+
+
+
+
+----
+section 2: details
+1. generic provision workflow (PXE, IPXE/GPXE)
+2. kusu/xcat provision workflow
+3. update workflow (software deploy and update)
+    a. cfmsync --> kusu
+    b. updatenode --> xcat

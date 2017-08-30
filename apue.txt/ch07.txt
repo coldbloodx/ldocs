@@ -1,0 +1,615 @@
+第7章
+进程环境
+7.1引言
+下-章将介绍进程控制原语，在此之前需先了解进程的环境。本章中将学习：当执行程序时，其main函数是如何被调用的，命令行参数是如何传送给执行程序的，典型的存储器布局是什么样式，如何分配另外的存储空间，进程如何使用环境变量；各种不同的进程终止方式等。另外，还将说明longjmE^setiiinp函数以及它们与栈的交互作用。本章结束之前，还将研究进程的资源限制。
+7.2	main函数
+C程序总是从main函数开始执行。main函数的原型是
+int main {int argc, char *argv[])；
+其中，wgc是命令行参数的数目，是指向参数的各个指针所构成的数组。7.4节将对命令行参数进行说明。
+当内核执行C程序时(使用一个exec函数，8.10节将说明exec函数)，在调用main前先调用一个特殊的启动例程。可执行程序文件将此启动例程指定为程序的起始地址——这是由连接编辑器设置的，而连接编辑器则由C编译器(通常是cc)调用。启动例程从内核取得命令行参数和环境变量值，然后为按上述方式调用main函数做好安排。
+7.3进程终止
+有8种方式使进程终止(termination),其中5种为正常终止，它们是
+(1)从main返回。
+⑵调用exit。
+(1)	调用_exit^Exit。
+(2)	最后一个线程从其启动例程返回(11.5节)。
+⑶最后一个线程调用Pthread_exit (11.5节)
+异常终止有3种方式，它们是
+(6)	调用abort	(10.17节)。
+(7)	接到一个信号并终止(10.2节)。
+(8)	最后一个线程对取消请求做出响应(11.5节和12.7节)。
+在第11和12章讨论线程之前，我们暂不考虑专门针4我程的三种终止方式。
+
+ 
+上一节提及的启动例程是这样编写的，使得从main返回后立即调用exit函数。如果将启动例程以C代码形式表示(实际上该例程常常用汇编语言编写)，则它调用main函数的形式可能是：
+exit{main(argc, argv))；
+1 • exit函数
+有三个函数用干正常终止一个程序：_exitft_Exit立即进入内核，exit则先执行一些清理处理(包括调用执行各终止处理程序，关闭所有标准I/O流等)，然后进入内核。
+#include <stdlib.h> void exit {int status)； void 一Exit (int status)；
+#include <unistd.h> void 一exit {int status);
+我们将在8.5节中讨论这三个函数对其他进程(例如正在终止进程的父、子进程)的影响。使用不同头文件的原因是：exit和—Exit是由ISO C说明的，而—exit则是由P0SIX.1说明的。
+由干历史原因，exit函数总是执行一个标准I/O库的清理关闭操作：为所有打开流调用fclose函数。回忆5.5节，这会造成所有缓冲的输出数据都被冲洗(写到文件上)。
+三个exit函数都带一个整型参数，称之为终止状态(或退出状态，exit status)。大多数UNIX shell都提供检査进程终止状态的方法。如果(a)若调用这些函数时不带终止状态，或(b)main执行了一个无返回值的return语句，或(c)main没有声明返回类型为整型，则该进程的终止状态是未定义的。但是，若main的返回类型是整型，并且main执行到最后一条语句时返回(隐式返回)，那么该进程的终止状态是0。
+这种处理是ISO C标准1999版引入的。历史上，若main函数终止时没有显式使用return语句或调用exit函数，那么进程的终止状态是未定义的。
+main函数返回一整型值与用该值调用exit是等价的。于是在m&in函数中
+exit(0)；
+等价干
+return(0)；
+实例
+程序清单7-1中的程序是经典的“hello, world”实例。
+程序清单7-1经典的C程序
+#include <stdio.h> main{)
+{
+printf{"hello, world\n")；
+
+ 
+7.3进程终止 149
+对该程序进行编译，然后运行，则可见到其终止码是随机的。如果在不同的系统上编译该程序，我们很可能得到不同的终止码，这取决于main函数返回时栈和寄存器的内容：$ cc hello.c $ ./a.out
+hello, world
+$ echo $?	打印终止状态 13 现在，如果我们启用1999 ISO C编译器扩展，则可见到终止码改变了： $ cc -std=c99 hello.c	启用gee’s 1999 ISO C扩展
+hello.c：4： warning： return type defaults to "int"
+$ ./a.out hello, world
+$ echo $?	打印终止状态
+0
+注意，当我们启用1999 ISO C扩展时，编译器发出I告消息。打印该縈告消息的原因是：main函数的类型没有显式地声明为整型。如果我们增加了这一声明，那么此警告消息就不会出现。但是，如果我们启用编译器所推再的警告消息(使用-Wall标志)，则可能见到类似于“control reaches end of nonvoid function."控制到达非void函数的尾端这样的警告消息。
+将main声明为返回整型，但在main函数体内用exit代替return,对某些C编译器和UNIX lint(l)程序而言会产生不必要的警告信息，因为这些编译器井不知道main中的exit与return语句的作用相同。避开这种警告信息的一种方法是：在main中使用return语句而不是exit。但是这样做的结果是不能用UNIX的grep实用程序来找出程序中所有的exit调用，另外一个解决方案是将main声明为返回void而不是int,然后仍旧调用exit„这也邊开了编译器的警告，但从程序设计角度看却并不正确，而且会产生其他的编译警告，因为main的返回类型应当是带符号整型。本章将main表示为返回整型，因为这是ISOC和P0S1X.1所指义的。
+不同的编译器所发生警告消息的啰嗦程度是不一样的。除非使用警告选项，否则GNU C编译器通常不会发出不必要的警告消息。	
+在下一章，我们将了解到任一进程如何引起一个程序被执行，如何等待进程完成，然后又如何取其终止状态。
+2. atexit函数
+按照ISO C的规定，一个进程可以登记多达32个函数，这些函数将由exit自动调用。我们称这些函数为终止处理程序(exit handler),并调用atexit函数来登记这些函数。
+^include <stdlib.h>	
+int atexit {void {*func) (void))；	
+	返回值：若成功则返回0，若出错则返回非0值
+其中，atexit的参数是一个函数地址，当调用此函数时无需向它传送任何参数，也不期望它返回一个值。exit调用这些函数的顺序与它们登记时候的顺序相反。同一函数如若登记多次，则也会被调用多次。
+终止处理程序这一机制是由ANSI C标准于1989年引入的。在ANSI C之前出现的系统(例如SVR3 和4.3BSD)都没有提供这些终止处理程序。
+ISO C要求系统至少应支持32个终止处理程序。为了确定一个給定的平台支持的最大终止处理程序数，可以使用sysconf函数(见表2.12)。
+根据ISOC和POSIX.1,exit首先调用各终止处理程序，然后按需多次调用fclose，关闭所有打开流。POSIX.1扩展了ISO C标准，它指定如若程序调用exec函数族中的任一函数，则将清除所有已安装的终止处理程序。图7-1显示了一个C程序是如何启动的，以及它可以终止的各种方式。
+exitr •
+或
+exit
+-或
+Exit
+用户函数
+回		
+		
+main
+	m	
+回		1昍
+阁,		
+C启动
+	例程	
+ 
+用户进程
+内 核
+图7-1 —个C程序是如何启动和终止的
+注意，内核使程序执行的唯一方法是调用一个exec函数。进程自愿终止的唯一方法是显式或隐式地(通过调用exit)进程也可非自愿地由一个信号使其终止(图7-1中没有显示)。
+实例
+叚序清单7-2中的程序说明如何使用atexit函数。
+	程序清单7-2终止处理程序实例	
+#include "apue.h"
+static void my一exit1(void)； static void my一exit之{void};
+int
+main(void)
+{
+if {atexit(my_exit2) != 0}
+err一sys{"can't register myexitS”；
+
+ 
+7.4命令行参数 151
+if {atexit{my 一exit1} != 0)
+err 一sys("can,t register my_exitl")； if (atexit{my 一exit1} != 0}
+err一sys{"can,t register my 一exitl"};
+printf{"main is done\n")； return(0);
+static void my一exit1{void}
+{ _
+printf{"first exit handler\n")；
+static void my—exit2{void}
+{一
+printf{"second exit handler\nH)；
+执行该程序产生：
+$ ./a.out
+main is done first exit handler first exit handler second exit handler
+终止处理程序每登记一次，就会被调用一次。在程序清单7-2中，第一个终止处理程序被登记两次，所以也会被调用两次。注意，在main中没有调用exit,而是用了return语句。
+7.4命令行参数
+当执行一个程序时，调用exec的进程可将命令行参数传递给该新程序。这是UNIX shell的一部分常规操作。在前几章的很多实例中，我们已经看到了这一点。
+实例
+程序清单7-3中的程序将其所有命令行参数都回送到标准输出上。注意，通常的echo(1)程序不会回送第0个参数。
+程序清单7-3将所有命令行参数回送到标准输出
+#include "apue.h" int
+main(int argc, char *argv[])
+for (i = 0； i < argc； i++)	/* echo all command-line args */
+printf{"argv[%d]： %s\n"f i, argvfi])； exit(0)；
+
+ 如果编译该程序并将可执行文件命名为echoarg，则得到
+$ ./echoarg argl TEST £00
+argv[0]： ./echoarg argv[1]： argl argv [2] ： TEST argv[3]： foo
+ISOC和POSIX.1都要求argv [argc]是一个空指针。这就使我们可以将参数处理循环改写为
+for (i = 0; argv[i] != NULL； i++)	
+
+7.5环境表
+每个程序都会接收到一张环境表。与参数表一样，环境表也是一个字符指针数组，其中每个指针包含一个以null结束的C字符串的地址。全局变量environ则包含了该指针数组的地址：
+extern char **environ；
+例如，如果该环境包含5个字符串，那么它看起来可能如图7-2所示。其中，每个字符串的结尾处都显式地有一个null字符。我们称environ为环境指针(environment pointer)，指针数组为环境表，其中各指针指向的字符串为环境字符串。
+环境指针	环境表	环境字符串
+ 
+图7-2由5个C字符串组成的环境
+按照惯例，环境由name=value
+这样的字符串组成，这与图7-2中所示相同。大多数预定义的名字完全由大写字母组成，但这只是一个惯例。
+在历史上，大多数UNIX系统支持main函数带有三个参数，其中第三个参数就是环境表的地址：
+int main (int argc, char *argv[] , char *envp [])；
+因为ISO C规定main函数只有两个参数，而且第三个参数与全局变量environ相比也没有带来更多益处，所以POSIX.1也规定应使用environ而不使用第三个参数。通常用getenv和putenv函数(见7.9节)来访问特定的环境变量，而不是用environ变量。但是，如果要查看整个环境，则必须使用environ指针。
+7-6 C程序的存储空间布局
+从历史上讲，c程序一直由下面几部分组成：
+正文段。这是由CPU执行的机器指令部分。通常，正文段是可共享的，所以即使是频繁执行的程序(如文本编辑器、C编译器和shell等)在存储器中也只需有一个副本，另外，正文段常常是只读的，以防止程序由于意外而修改其自身的指令。
+•初始化数据段。通常将此段称为数据段，它包含了程序中需明确地陚初值的变量。例如，C程序中出现在任何函数之外的声明：
+int
+maxcount = 99；
+使此变量带有其初值存放在初始化数据段中。
+•非初始化数据段。通常将此段称为bss段，这一名称来源于一个早期的汇编运算符，意思是“block started by symbol”(由符号开始的块)，在程序开始执行之前，内核将此段中的数据初始化为0或空指针。出现在任何函数外的C声明
+long sum[1000]；
+使此变量存放在非初始化数据段中。
+•栈。自动变量以及每次函数调用时所需保存的信息都存放在此段中。每次调用函数时，其返回地址以及调用者的环境信息(例如某些机器寄存器的值)都存放在栈中。然后，最近被调用的函数在栈上为其自动和临时变量分配存储空间。通过以这种方式使用栈，可以递归调用c函数。递归函数每次调用自身时，就使用一个新的栈帧，因此一个函数调用实例中的变量集不会影响另一个函数调用实例中的变量。
+•堆。通常在堆中进行动态存储分配。由于历史上形成的惯例，堆位于非初始化数据段和栈之间。
+图7-3显示了这些段的一种典型安排方式。这是程序的逻辑布局，虽然并不要求一个具体实现一定以这种方式安排其存储空间，但这是一种我们便于说明的典型安排。对于x86处理器上的Linux,正文段从OxOSCMSOOO单元开始，栈底则在OxCOOOOOOO之下开始(在这种特定结构中，栈从高地址向低地址方向增长)。堆顶和栈底之间未用的虚地址空间很大。
+高地址
+低地址
+栈
+堆
+未初始化 的数据
+初始化的数据
+正文
+命令行参数和
+环境变量
+由exec初 始化为0
+由exec从程序 文件中读入
+图典型的存储器安排
+a.out中还有若干其他类型的段，例如，包含符号表的段、包含调试信息的段以及包含动态共享库链接表的段等等。这些部分并不装载到进程执行的程序映像中。
+从图7-3还可注意到，未初始化数据段的内容并不存放在磁盘上的程序文件中。其原因是，内核在程序开始运行前将它们都设置为0。需要存放在程序文件中的段只有正文段和初始化数据段。
+size(l)命令报告正文段、数据段和bss段的长度(单位：字节)。例如：
+$ size /uer/bin/cc /bin/sh
+text data bss dec	hex	filename
+79606 1536 916 82058	1408a	/usr/bin/cc
+619234 21120 18260 658614	a0cb6	/bin/sh
+第4列和第5列是分别以十进制和十六进制表示的三个段的总长度。
+7.7共享库
+现在，大多数UNIX系统支持共享库。Arnold[1986]说明了系统V上共享库的一个早期实现，Gingell等[1987]则说明了SunOS上的另一个实现。共享库使得可执行文件中不再需要包含公用的库例程，而只需在所有进程都可引用的存储区中维护这种库例程的一个副本。程序第一次执行或者第一次调用某个库函数时，用动态链接方法将程序与共享库函数相链接。这减少了每个可执行文件的长度，但增加了一些运行时间开销。这种时间开销发生在该程序第一次被执行时，或者每个共享库函数第一次被调用时。共享库的另一个优点是可以用库函数的新版本代替老版本，而无需对使用该库的程序重新连接编辑。(假定参数的数目和类型都没有发生改变。)
+在不同的系统中，程序可能使用不同的方法说明是否要使用共享库。比较典型的有cc(l)和ld(l)命令的选项。作为长度方面发生变化的例子，先用无共享库方式创建下列可执行文件(经典的hello.c程序)：
+$ cc -static hellol.c	阻止gcc使用共享库
+$ Xfl -1 1	K.OUt			
+-rwxrwxr-	-x 1 sar	475570 Feb	18 23:17 a.out
+$ size a.	.out			
+text	data	bss	dec	hex filename
+375657	37.80	3220	382657	5d6cl a.out
+如果编译此程序以使用共享库,则可执行文件的正文和数据段的长度都会显著减小
+$ cc hellol.c		gcc默认使用共享库
+$ Is -X «	I. out			
+-rwxrwxr-	■x 1 sar		11410 Feb	18 23:19 a.out
+$ size a.	out			
+text	data	bss	dec	hex filename
+872	256	4	1132	46c a.out
+7.8存储器分配
+ISO C说明了三个用于存储空间动态分配的函数。
+(1)malloc0分配指定字节数的存储区。此存储区中的初始值不确定。
+(2)calloc0为指定数量具指定长度的对象分配存储空间。该空间中的每一位都初始化为0。
+(3)realloc。 更改以前分配区的长度(增加或减少)。当增加长度时，可能需将以前分配 区的内容移到另一个足够大的区域，以便在尾端提供增的存储区，而新增区域内的初始值则 不确定。
+#include <stdlib.h>		
+void	♦malloc(eize_t	size)	
+void	★calloc(eize_t	nobj,	size_t size)；
+void	★realloc(void	*ptr.	eize_t newsize)；
+三个函数返回值：若成功则返回非空指针，若出错则返回NULL
+void	free (void *ptr)	•	
+这三个分配函数所返回的指针一定是适当对齐的，使其可用于任何数据对象。例如，在一个特定的系统上，如果最苛刻的对齐要求是，double必须在8的倍数地址单元处开始，那么这三个函数返回的指针都应这样对齐。
+因为这三个alloc函数都返回通用指针void*，所以如果在程序中包括了#include<stdlib.h>(以获得函数原型)，那么当我们将这些函数返回的指针赋予一个不同类型的指针时，就不需要显式地执行类型强制转换。
+函数free释放ptr指向的存储空间。被释放的空间通常被送入可用存储区池，以后，可在调用上述三个分配函数时再分配。
+realloc函数使我们可以增、减以前分配区的长度(最常见的用法是增加该区)。例如，如果先为一个数组分配存储空间，该数组长度为512，然后在运行时填充它，但运行一段时间后发现该数组原先的长度不够用，此时就可调用realloc扩充相应存储空间。如果在该存储区后有足够的空间可供扩充，则可在原存储区位置上向髙地址方向扩充，宅需移动任何原先的内容，并返回传送给它的同样的指针值。如果在原存储区后没有足够的空间，则realloc分配另一个足够大的存储区，将现有的512个元素数组的内容复制到新分配的存储区。然后，释放原存储区，返回新分配区的指针。因为这种存储区可能会移动位置，所以不应当使任何指针指到该区中。习题4.16显示了在getcwd中如何使用realloc,以处理任何长度的路径名。程序清单17-28是使用real loc的另一个例子，用其可以避免使用编译时固定长度的数组。
+注意，realloc的最后一个参数是存储区的(新长度)，它不是新、旧存储区长度之差。作为-个特例，若声•是一个空指针，贝Ijrealloc的功能与malloc相同，用于分配一个指定长度为nevvu'ze的存储区。
+这些函数的早期版本允许调用realloc分配自上次malloc. realloc或calloc调用以来所释放的块。这种技巧可回溯到V7,它利用malloc的搜索策略，实现存储器紧缩。Solaris仍支持这一功能，而>?艮多其他平台则不支持。这种功能不被赞同，不应再使用。
+这些分配例程通常用sbrk(2)系统调用实现。该系统调用扩充(或缩小)进程的堆(见图6-3)。malloc和free的一个示例实现请见Kernighan和Ritchie[1988]的8.7节。
+虽然sbrk可以扩充或缩小进程的存储空间，但是大多数malloc和free的实现都不减小进程的存储空间。释放的空间可供以后再分配，但通常将它们保持在malloc池中而不返回给内核。
+应当注意的是，大多数实现所分配的存储空间比所要求的要稍大一些，额外的空间用来记录管理信息——分配块的长度、指向下一个分配块的指针等等。这就意味着如果超过一个已分配区的尾端进行写操作，则会重写后一个块的管理记录。这种类型的错误是灾难性的，但是因；这种错误不会很快暴露出来，所以也就很难发现。同样，在已分配区起始位置之前进行写操作会重写本块的管理记录。
+
+ 
+在动态分配的缓冲区前或后进行写操作，破坏的可能不仅仅是该区的管理记录信息。在动态分配的缓冲区前后的存储区很可能用于其他动态分配的对象。这些对象与破坏它们的代码可能无关，这造成寻求信息破坏的源头更加困难。
+其他可能产生的致命性的错误是：释放一个已经释放了的块，调用free时所用的指针不是三个alloc函数的返回值等。如若一个进程调用malloc函数，但却忘记调用free函数，那么该进程占用的存储器就会连续增加，这被称为泄漏(leakage)。不调用free函数以释放不再使用的空间，那么进程地址空间长度就会漫慢增加，直至不再有空闲空间。此时，由于过度的分页开销，因而使性能下降。
+因为存储器分配出错很难跟踪，所以某些系统提供了这些函数的另一种实现版本。每次调用这三个分配函数中的任意一个或free时，它们都进行附加的检错。在调用连接编辑器时指定一个专用库，则在程序中就可使用这种版本的函数。此外还有公共可用的资源，在对其进行编译时使用-个特殊标志就会使附加的运行时检查生效。
+FreeBSD、Mac OS X以及Linux通过设置环境变量，支持附加的调试功能。另外，通过符号链接/etc/malloc. conf,可将选崎传速给FreeBSD函数库。
+1.替代的存储器分配程序
+有很多可替代malloc和free的函数。某些系统已经提供替代存储器分配函数的库。另一 些系统只提供标准的存储器分配程序，如果希望，则软件开发者可以下载替代函数。下面讨论 某些替代函数和库。
+2.libmalloc
+基于SVRV的UNIX系统(例如Solaries)包括libmalloc库，它提供了一套与ISO C存储器分配函数相匹配的接口。libmalloc库包括mallopt函数，它使进程可以设置一些变量，并用它们来控制存储空间分配程序的操作。还可使用另一个名为mallinfo的函数，以对存储空间分配程序的操作进行统计。
+3.vmalloc
+Vo[1996]说明一种存储器分配程序，它允许进程对于不同的存储区使用不同的技术。除了一些vmalloc特有的函数外，该库也提供了ISO C存储器分配的仿真器。
+4.快速适配(quick-fit)
+历史上，所使用的标准malloc算法是最佳适配或首次适配存储分配策略。快速适配算法快于上述两种算法，但趋向于使用较多的存储器。Weinstock和Wulf[1988]对该算法进行了描述，该算法基于将存储器分裂成各种长度的缓冲区，并将未使用的缓冲区按其长度组成不同的空闲区歹醫在许多ftP网站上可方便地取用基于快速适配的malloc和free开放源代码实现。
+5.alloca函数
+还有-个函数也值得一提，这就是alloca。它的调用序列与malloc相同，但是它是在当前函数的栈帧上分配存储空间，而不是在堆中。其优点是：当函数返回时，自动释放它所使用的栈帧，所以不必再为释放空间而费心。其缺点是：alloca函数增加了栈帧的长度，而某些系统在函数已被调用后不能增加找桢长度，t是也就不能支持alloca函数。尽管如此，很多软件包还是使用alloca函数，也有很多系统实观了该函数。
+本书中讨论的四个平台都提供了 alloca函数。
+
+ 
+7.9环境变量
+如同前述，环境字符串的形式通常如下：
+natne=value
+UNIX内核并不查看这些字符串，它们的解释完全取决于各个应用程序。例如，shell使用了大量的环境变量。其中某一些在登录时自动设置(如HOME、USER等)，有些则由用户设置。我们通常在一个shell启动文件中设置环境变量以控制shell的动作。例如，若设置了环境变量MAILPATH,则它告诉Bourne shell、GNU Bourne-again shell和Korn shell到哪里去查看邮件。
+ISO C定义了一个函数getenv，可以用其取环境变量值，但是该标准又称环境的内容是由实现定义的。
+#include <stdlib.h>
+char *getenv(const char *name)；
+返回值t指向与关联的wz/we的指针，若未找到则返回NULL
+注意，此函数返回一个指针，它指向name = va/«e字符串中的va/«e。我们应当使用getenv■从环境中取一个指定环境变量的值，而不是直接访问environ。
+Single UNIX Specification中的POSIX.1定义了某些环境变量。如果支持XSI扩展，那么其中也包含了另外一些环境变量定义。表7-1列出了邮ingle UNIX Specification定义的环境变量，并指明本书讨论的4种实现对它们的支持情况。由P0SIX.1定义的各环境变量标记为•,否则为XSI扩展。本书讨论的4种UNIX实现使用了很多依赖于实现的环境变量。注意，ISO C没有定义任何环境变量。
+表7-1 Single UNIX Specification定义的环境变量
+变量	POSIX.1	FreeBSD	Linux	Mac OS X	Solaris	说明
+		5.2.1	2.4.22	10.3	9	
+COLUMNS	•	•		*		终端宽度
+DATEMSK	XSI					getdate(3)模板文件路径名
+HOME						起始目录
+LANG						本地名
+LC_ALL						本地名
+LC一COLLATE						本地排序名
+LC一CTYPE						本地字符分类名
+LC一MESSAGES						本地消息名
+LC一MONETARY						本地货币编辑名
+LC_NUMERIC						本地数字编辑名
+LC_TIME						本地日期/时间格式名
+LINES						终端高度
+LOGNAME						登录名
+MSGVERB	XSI					fmtmsg(3)处理的消息组成部分
+NLSPATH	XSI					消息类模板序列
+PATH						搜索可执行文件的路径前缀列表
+PWD						当前工作目录的绝对路径名
+SHELL						用户首选的shell名
+TERM						终端类型
+TMPDIR
+TZ						在其中创建临时文件的目录路径名 时区信息
+
+ 
+158 第7章进程环境
+除了取环境变量的值，有时也需要设置环境变量。我们可能希望改变现有变量的值，或者增加新的环境变量。(在下一章将会了解到，我们能影响的只是当前进程及调用的任何子进程的环境，但不能影响父进程的环境，这通常是一个shell进程。尽管如此，修改环境表的能力仍然是很有用的。)不幸的是，并不是所有系统都支持这种能力。表7-2列出了由不同的标准及实现支持的各种函数。
+表7-2对于各种环境表函数的支持
+函数	ISOC POSIX.1	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3 Solaris 9
+getenv	• •	•		■ ■
+putenv	XSI	•		• •
+setenv	•	•		•
+unsetenv
+clearenv		'		•
+clearenv不是Single UNIX Specification的组成部分。它被用来删除坏境表中的所有项。
+表7-2中间三个函数的原型是:
+#include <stdlib.h>	
+int putenv (char *str)；	
+int setenv (const char *name, const	char * value, int rewrite)；
+int unsetenv(const char *name)；	
+	二个函数返回值：若成功则返回0，若出错则返回非0值
+这三个函数的操作是：
+•putenv取形式为nflme=Vfl/时的字符串，将其放到环境表中。如果nfl服已经存在，则先删除其原来的定义。
+•	setenv将mjrne设置为vfl/«e。如果在环境中nfl/ne已经存在，那么(a)若rewr/纪非0,则首先删除其现有的定义，(b)若revvr/纪为0，则不删除其现有定义(name不设置为新的而且也不出错)。
+•	unsetenv刪除name的定义。即使不存在这种定义也不算出错。
+注意putenv和setenv之间的i别。setenv必须分配存储区，以便依据其参数创建name=value字符串。同时，putenv则无需将传送给它的参数字符串直接放到环境中。确实，在Linux和Solaris中，putenv实现将传送给它的字符串地址作为参数直接放入环境表中。在这种情况下，将存放在栈中的字符串作为参数传送给该函数就会发生错误，其原因是，从当前函数返回时，其栈桢占用的存储区可能将被重用。
+这些函数在修改环境表时是如何进行操作的呢？对这一问题进行研究考察是非常有益的。回忆图7-3,其中，环境表(指向实际仙脈=vfl/丨化字符串的指针数组)和环境字符串通常存放在进程存储空间的顶部(栈之上)。删除一个字符串很简单——只要先在环境表中找到该指针，然后将所有后续指针都向环境表首部顺次移动一个位置。但是增加一个字符串或修改一个现有的字符串就困难得多。环境表和环境字符串通常占用的是进程地址空间的顶部，所以它不能再向髙地址方向(向上)扩展：同时也不能移动在它之下的各栈帧，所以它也不能向低地址方向(向下)扩展。两者组合使得该空间的长度不能再增加。
+(1)	如果修改一个现有的name:
+(a)	如果新的长度少于或等于现有vfl/Me的长度，则只要在原字符串所用空间中写 入新字符串。
+(b)	如果新的长度大于原长度，则必须调用malloc为新字符串分配空间，然后将新字符串复制到该空间中，接着使环境表中针对^的指针指向新分配区。
+(2)	如果要增加一个新的name,则操作就更加复杂。首先，调用malloc为name=字符串分配空间，然后将该字符串复制到此空间中，贝IJ:
+(a)	如果这是第一次增加一个新name,则必须调用malloc为新的指针表分配空间。接着，将原来的环境表复制到新分配区，并将指向新name=字符串的指针存放在该指针表的表尾，然后又将一个空指针存放在其后。最后使environ指向新指针表。再看一下图7-3，如果原来的环境表位于找顶之上(这是一种常见情况)，那么必须将此表移至堆中。但是，此表中的大多数指针仍指向栈顶之上的各"=vo/we字符串。
+(b)	如果这不是第一次增加一个新则可知以前已调用malloc在堆中为环境表分 配了空间，所以只要调用realloc，以分配比原空间多存放一个指针的空间。然后将指向新name=va/we字符串的指针存放在该表表尾，后面跟着一个空指针。
+7.10	setjmp和longjmp函数
+在C中，goto语句是不能跨越函数的，而执行这类跳转功能的是函数setjmp和longjmp。这两个函数对于处理发生在深层嵌套函数调用中的出错情况是非常有用的。
+考虑程序清单7-4的骨架部分。其主循环是从标准输入读1行，然后调用do_line处理该输入行。do_line函数调用get_token从该输入行中取下一个标记。一行中的第一个标记假定是一条某种形式的命令，于是switch语句就实现命令选择。我们的程序只处理一条命令(add命令)，对此命令调用cmd_add函数。
+程序清单7-4进行命令处理的典型程序骨架
+#	inc lude " apue , h11
+#define TOK^ADD 5
+void do一line(char *); void cmd_add(void)； int get一token(void);
+int
+main(void)
+{
+char line[MAXLINE];
+while (fgets(line, MAXLINE, stdin) != NULL) do一line(line)； exit(0)?
+char *tok_ptr；	/* global pointer for get—token() ★/
+
+ 
+160 第7章进程环境
+void
+do一line(char *ptr)	/* process one line of input */
+{ 一
+int cmd； tok_j)tr = ptr;
+while ((cmd = get_token()) >0) {
+switch (cmd) { /* one case for each command */ case T0K_ADD：
+cmd一acid ()； break;
+void
+cmd一add(void)
+{ _
+int token; token = get—token()；
+/* rest of processing for this command */
+}
+int
+get_token(void)
+{ _
+/★ fetch next token from line pointed to by tok__ptr */
+195
+i
+程序清单7-4中的框架典型地用于读命令，确定命令的类型，然后调用相应函数处理每一条命令这一类程序。图7-4显示了调用了cmd—add之后栈的大致使用情况。
+栈的底部
+iuain的梭申贞
+高地址
+栈扩展
+的方向
+do一line 的栈帧
+cmd_add
+的栈帧
+低地址
+图7-4调用cmd_add后的各个栈帧
+自动变量的存储单元在每个函数的栈帧中。数组line在main的栈帧中，整型cmd在do_line的找幀中，整型token在cmd_add的找帧中。
+如上所述，这种形式的栈安排是非常典型的，但并不要求非如此不可。栈并不一定要向低地址方向扩充。某些系统对栈并没有提供特殊的硬件支持，此时一个C实现可能要用链接表实现栈帧。
+在编写程序清单7-4这样的程序时经常会遇到的一个问题是，如何处理非致命性的错误。例如，若cmd—add函数发现一个错误(譬如说一个无效的数)，那么它可能先打印一个出错消息，然后希望忽略输入行的余下部分，返回main函数并读下一输入行。但是如果这种情况出现在main函数中的深层嵌套中时，用C语言就比较难以做到这一点。(在本例中，cmd_add函数只比main深两个层次，在有些程序中往往深五个层次或更多。)如果我们不得不以检查返回值的方法逐层返回，那就会变得很麻烦。
+解决这种问题的方法就是使用非局部go to set jmp和longjmp函数。非局部指的是,这不是由普通C语言goto语句在一个函数内实施的跳转，而是在栈上跳过若干调用帧，返回到当前函数调用路径上的某一个函数中。
+#include <Betjmp.h>	
+int setjmp(jmp_buf env)；	
+	返回值：若直接调用则返回0，若从long jmp调用返回则返回非0值
+void 1ongjmp(jmp一buf env,	int val)；
+在希望返回到的位置调用setjmp,在本例中，此位置在main函数中。因为我们直接调用该函数，所以其返回值为0。setjmp参数的类型是一个特殊类型jmp—buf。这一数据类型是某种形式的数组，其中存放在调用longjmp时能用来恢复栈状态的所有信息。因为需在另一个函数中引用变量，所以规范的处理方式是将变量定义为全局变量。
+当检查到一个错误时，例如在cmd_add函数中，则以两个参数调用longjmp函数。第一个就是在调用setjmp时所用的env,第二个参数是具有非0值的va/,它将成为从setjmp处返回的值。使用第二个参数的原因是对于一个setjmp可以有多个longjmp。例如，可以在cmd_add中以ra/为1调用longjmp,也可在get_token中以va/为2调用longjmp。在main函数中，setjmp的返回值就会是1或2，通过测试返回值就可判断造成返回的longjmp是在cmd_add还是在get_token中。
+再回到程序实例中，程序清单7-5给出了经修改过后的main和cmd_add函数(另外两个函数do_line和get_token未经更改)。
+程序清单7-5 setjnp和longjnp实例
+#include "apue.h"
+#include <setjmp.h>
+#define TOK 一 ADD 5
+j mp_buf jmpbuffer?
+int
+main (void)
+{
+char line[MAXLINE]；
+if (setjmp(jmpbuffer) != 0) printf("error")； while (fgets(line, MAXLINE, stdin) != NULL) do_line(line)； exit(0)； 
+void
+cmd_add(void)
+{ _
+int token; token = get_token()；
+if (token < 0)	/* an error has occurred */
+longj mp(jmpbuffer# 1)；
+/* rest of proceBBing for this command */
+执行main时，调用setjmp,它将所需的信息记入变量jmpbuffer中并返回0。然后调用do_line,它又调用cm_add,假定在其中检测到一个错误。在cmd_add中调用longjmp之前，栈的形式如图7-4中所示。但是longjmp使栈反绕到执行main函数时的情况，也就是抛弃了cmd_add和do_line的栈帧(见图7_:5)。调用longjmp造成main中setjmp的返回，但是，这一次的返回值是1(longjmp的第二个参数)。
+栈的底部
+ 
+栈扩展
+的方向
+髙地址
+低地址
+图7-5调用long jmp后的栈喊
+1.	自动、寄存器和易失变置
+我们已经了解在调用longjmp后栈帧的基本结构，下一个问题是：在main函数中，自动变量和寄存器变量的状态如何？当longjmp返回到main函数时’这些变量的值是否能恢复到以前调用setjmp时的值(即回滚到原先值)，或者这些变量的值保持为调用do_line时的值(do_line调用cmd_add,cmd一add又调用longjmp)?不幸的是，对此问题的回答是“看情况”。大多数实现并不回滚这些自动变量和寄存器变量的值，而所有标准则说它们的值是不确定的。如果你有一个自动变量，而又不想使其值回滚，则可定义其为具有volatile属性。声明为全局或静态变量的值在执行longjmp时保持不变。
+下面我们通过程序清单7-6说明在调用longjmp后，自动变量、全局变量、寄存器变量、静态变量和易失变量的不同情况。
+	 程序清单7-6 longjnp对各类变1的影响	
+#include "apue.h"
+#include <setjmp.h>
+static void fl(int, int, int, int)；
+Btatic void f2(void)；
+
+ 
+7.10 setjmp和longjmp函数 163
+Btatic jmp_buf jmpbuffer； static int	globval;
+main(void)
+int
+register int volatile int static int
+autoval; regival; volaval; statval;
+globval = 1; autoval = 2; regivaX
+if (Betjmp(jmpbuffer) != 0) { printf("after Xongjmp：\n")； printf("globval = %d# autoval •• volaval * %d, statvaX = globval, autoval, regivaX, exit(0);
+3; volaval = 4; statval = 5 j
+%d,
+=%d, regival
+%d\n"•
+volaval, Btatval)
+★ Change variables after Betjmp, but before longjmp.
+*/
+globval - 95； autoval « 96; regival = 97; volaval = 98; statval = 99；
+f1(autoval, regivaX, volaval, exit(0)；
+Btatval)； /* never returns */
+Btatic void
+f1(int i, int j, int k, int X)
+{
+printf("in f1()：\nM)； printf("globval = %d, autoval "volaval = %d, statval = f2()；
+=%d, regival = %df %d\n", globval, i,
+1),
+static void f2(void)
+longjmp(jmpbuffer, 1),
+如果以不带优化和带优化选项对此程序分别进行编译，然后运行它们，则得到的结果是不同的:
+$ cc testjmp.c $ ./a.out
+in f1()：
+globval = 95, autoval after longjmp： globval - 95, autoval $ cc -o testjmp.c $ ./a.out in f 1 ()：
+globval - 95, autoval after longjmp： globval = 95, autoval
+不进行任何优化的编译
+96, regivaX = 97, volaval = 98, statvaX
+96, regivaX = 97, volaval = 98, statvaX 进行全部优化的编译
+99
+99
+96, regivaX = 97, volaval = 98, statvaX = 99 2, regival » 3, volaval = 98, Btatval = 99
+注意，全局、静态和易失变量不受优化的影响，在调用long jmp之后，它们的值是最近所呈现的值。某个系统的set：jmp(3)手册页上说明，存放在存储器中的变量将具有longjmp时的值，而在CPU和浮点寄存器中的变量则恢复为调用setjmp时的值。这确实就是运行程序清单7-6中的程序时所观察到的值。不进行优化时，所有这5个变量都存放在存储器中(亦即忽略了对regival变量的register存储类说明)。而进行了优化后，autoval和regival都存放在寄存器中(即使autoVal并未声明为register),volatile变量则仍存放在存储器中。通过这一实例我们可以理解到，如果要编写一个使用非局部跳转的可移植程序，则必须使用volatile属性。但是从一个系统移植到另一个系统，任何事情都可能改变。
+在程序清单7-6中，某些printf的格式字符串可能不适宜安排在程序文本的一行中。我们没有将其分成多个printf调用，而是使用了ISO C的字符串连接功能，于是两个字符串序列
+"Btringl’1 ”string2"
+等价于
+"stringlstring2"	
+第10章讨论信号处理程序及其信号版本sigsetjmp和siglongjmp时，将再次涉及setjmp和long jmp函数。
+2.自动变置的潜在问题
+前面已经说明了处理栈帧的一般方式，现在值得分析一下自动变量的一个潜在出错情况。基本规则是声明自动变量的函数已经返回后，不能再引用这些自动变量。在整个UNIX系统手册中，关于这^点有很多警告。
+程序清单7-7中示出了一个名为open_data的函数，它打开了一个标准I/O流，然后为该流 设置缓存。
+	程序清单7-7自动变量的不正确使用	
+#include <stdio.h>
+#define DATAFILE "datafile"
+FILE *
+open一data(void)
+{ 一
+FILE *fp?
+char databuf[BUFSIZ]； /* Betvtmf makes this the stdio buffer */
+if ((fp = fopen(DATAFILE, ”r")) == NULL) return(NULL)； if (Betvbuf(fp, databuf, 一IOLBF, BUFSIZ) != 0) return(NULL)； return(fp); /* error */
+问题是：当open_data返回时，它在栈上所使用的空间将由下一个被调用函数的栈帧使用。但是，标准I/O库函数仍将使用其流缓冲区的存储空间。这就产生了冲突和混乱。为了校正这一问题，应在全局存储空间静态地(如static或extern)或者动态地(使用一种alloc函数)为数组databuf分配空间。
+    每个进程都有一组资源限制，其中一些可以用getrlimit和setrlimit函数查询和更改。
+
+ 
+7.11 getrlimit 和 setrlimit 函数 165
+#include <:sys/resource .h>	
+int getrlimit (int resource,	struct rlimit *rlptr)；
+int set rlimit (int resource,	const struct rlimit *rlptr)；
+	两个函数返回值：若成功则返回0，若出错则返回非0值
+这两个函数在Single UNIX Specification中定义为XSI扩展。进程的资源限制通常是在系统初始化时由进程0建立的，然后由每个后续进程继承。每种实现都可以用自己的方法对各种限制做出调整。
+对这两个函数的每一次调用都会指定一个资源以及一个指向下列结构的指针。
+struct rlimit {
+rlim_t rlim_cur； /* soft limit: current limit */
+rlim_t rlimmax; /* hard limit： maximum value for rlim_cur */
+在更改资源限制时，须遵循下列三条规则：
+(1)	任何一个进程都可将一个软限制值更改为小于或等于其硬限制值。
+(2)	任何一个进程都可降低其硬限制值，但它必须大于或等于其软限制值。这种降低对普通用户而言是不可逆的。
+(3)	只有超级用户进程可以提髙硬限制值。
+常量RLIM_INFINI1T指定了一个无限量的限制。
+这两个函数的参数取下列值之一。表7-3显示哪些资源限制是由Single UNIX Specification定义并受到本书讨论的4种UNIX系统实现支持的。
+表7-3对资源限制的支持
+限制	XSI	FreeBSD 5.2.1	Linux 2.4.22	Mac OS X 10.3	Solaris 9
+RLIMIT一AS					
+RLIMIT—CORE					
+RLIMIT一CPU					
+RLIMIT—DATA					
+RLIMIT一FSIZE					
+RLIMIT一LOCKS					
+RLIMIT^MEMLOCK					
+RLIMIT_NOFILE	•				•
+RLIMIT—NPROC					
+RLIMIT一RSS					
+RLIMIT—SBSIZE					
+RLIMIT一STACK	•		•	•	•
+RLIMIT_VMEM					•
+RLIMIT_AS	进程可用存储区的最大总长度(字节)。这会影响sbrk函数(1.11节)
+和mmap函数(14.9节)。
+RLIMIT_CORE core文件的最大字节数，若其值为0则阻止创建core文件。RLIMIT_CPU	CPU时间的最大量值(秒)，当超过此软限制时，向该进程发送SIGXCPU信号。
+RLIMIT_DATA 数据段的最大字节长度。这是图7-3中初始化数据、非初始以及堆的总和。
+可以创建的文件的最大字节长度。当超过此软限制时，则向该进程发送SIGXFSZ信号。
+一个进程可持有的文件锁的最大数(此数也包括Linux特有的文件租借数。详见Linux fcntl⑵手册页)。
+一个进程使用mlock(2)能够锁定在存储器中的最大字节长度。
+每个进程能打开的最大文件数。更改此限制将影响到sysconf函数
+在参数—SC_OPEN—MAX中返回的值(见2.5.4节)。亦见程序清单2-4。
+每个实际用户ID可拥有的最大子进程数。更改此限制将影响到
+sysconf函数在参数—SC_CHILD_MAX中返回的值(见2.5.4节)。
+最大驻内存集的字节长度(resident set size in bytes, RSS)。如果物
+理存储器供不应求，则内核将从进程处取回超过RSS的部分。
+用户在任一给定时刻可以占用的套接字缓冲区的最大长度(字节)。
+栈的最大字节长度。见图7-3。
+这是RLIMIT_AS的同义词。
+资源限制影响到调用进程并由其子进程继承。这就意味着为了影响一个用户的所有后续进程，需将资源限制的设置构造在shell之中。确实，Bourne shell, GNU Boume-again shell和Kom shell具有内置的ulimit命令，C shell具有内置的limit命令。(umask和chdir函数也必须是shell内置的。)
+RLIMIT一	.FSIZE
+RLIMIT.	.LOCKS
+RLIMIT.	_MEML0CK
+RLIMIT.	_N0FILE
+RLIMIT.	_NPR0C
+RLIMIT.	.RSS
+RLIMIT.	.SBSIZE
+RLIMIT.	JSTACK
+RLIMIT_	_VMEM
+程序清单7_s中的程序打印由系统支持的所有资源当前的软限制和硬限制。为了在各种实现上编译该程序，我们已经有条件地包括了各种不同的资源名。另请注意，有些平台定义rlim_t为unsigned long long而非unsigned long,对于此种平台，必须使用不同的printf格式。
+程序清单7-8打印当前资源限制
+#include "apue.h”
+#if defined(BSD) || defined(MACOS)
+#include <sys/time.h>
+#define FMT "%10lld ”
+#elBe
+#define FMT "%10Xd "
+#endif
+#include <sys/resource.h>
+#define doit (name) piT-limitB (#name, name)
+static void pr_Ximits(char *• int);
+int
+main(void)
+{
+#ifdef RLIMIT_AS
+doit (RLIMIT__AS);
+#endif
+doit (RLIMIT一CORE); doit(RLIMIT CPU);
+
+ 
+7.11 getrlimit 和 setrlimit 函数 167
+doit (RLIMIT一DATA); doit (RLIMIT二FSIZE)； #ifdef RLIMIT_LOCKS
+doit(RLIMIT_LOCKS)? #endif
+#ifdef RLIMIT—MEMLOCK
+doit(RLIMIT_MEML0CK); #endif
+doit(RLIMIT一NOFILE); #ifdef RLIMIT_NPROC
+doit(RLIMIT一NPROC); #endif
+#ifdef RLIMIT_RSS
+doit(RLIMIT_RSS); #endif
+#ifdef RLIMIT_SBSIZE
+doit(RLIMIT_SBSIZE); #endif
+doit(RLIMIT_STACK); #ifdef RLIMIT_VMEM
+doit(RLIMIT_VMEM); #endif
+exit(0)；
+static void
+pr_Ximits(char *name, int resource)
+{_
+struct rlimit limit；
+if (getrlimit(resource,	< 0)
+err_sys("getrlimit error for %sn, name); printf("%-14s ", name)； if (Ximit.rlim_cur == RLIM—INFINITY) printf("(infinite)");
+elBe
+printf(FMT, limit.rlim_cur)? if (limit,rlim_max == RLIM_INFINITY) printf("(infinite)")/
+elBe
+printf(FMT, limit.rlim_max)； putchar((int)#\n*)；
+注意，在doit宏中使用了ISO C的字符串创建运算符(#)，以便为每个资源名产生字符串值。例如：
+doit(RLIMIT 一CORE)?
+这将由C预处理程序扩展为：
+pr_limits (f,RLIMIT_CORE" • RLIMIT一CORE)；
+在FreeBSD下运行此程序，得到：
+$ ./a.out		
+RLIMIT-	■CORE	(infinite)	(infinite)
+RLIMIT_	■CPU	(infinite)	(infinite)
+RLIMIT_	_DATA	536870912	536870912
+RLIMIT_	_FSIZE	(infinite)	(infinite)
+RLIMIT:	"memlock	(infinite)	(infinite)
+
+ 
+168 第7章进程环境
+RLIMIT_	_nofile	1735	1735
+RLIMIT:	一NPROC	867	867
+RLIMIT^	_RSS	(infinite)	(infinite)
+RLIMIT:	SBSIZE	(infinite)	(infinite)
+RLIMIT:	STACK	67108864	67108864
+RLIMIT:	_VMEM	(infinite)	(infinite)
+在Solaris下运行此程序，得到：	
+$ ./a.out		
+RLIMIT_	AS	(infinite)	(infinite)
+rlimit"	_C0RE	(infinite)	(infinite)
+rlimit"	CPU	(infinite)	(infinite)
+RLIMIT_	■DATA	(infinite)	(infinite)
+rlimit"	FSIZE	(infinite)	(infinite)
+RLIMIT-	_N0FILE	256	65536
+RLIMIT_	STACK	8388608	(infinite)
+RLIMIT-	VMEM	(infinite)	(infinite)
+在介绍了信号机构后，习题10.11将继续讨论资源限制。
+7.12小结
+理解UNIX环境中C程序的环境是理解UNIX进程控制特征的先决条件。本章说明了一个进程是如何启动和终止的，如何向其传递参数表和环境。虽然这两者都不是由内核进行解释的，但内核起到了从exec的调用者将这两者传递给新进程的作用。
+本章也说明了C程序的典型存储空间布局，以及一个进程如何动态地分配和释放存储器。详细地了解用于维护环境的一些函数是值得的，因为它们涉及存储器分配。本章也介绍了setjmp和longjmp函数’它们提供了一种在进程内执行非局部转移的方法。最后介绍了各种实现提供的资源限制功能。
+习题
+7.1
+7.2
+7.3
+7.4
+7.5
+7.6
+7.7
+7.8
+7.9
+在Intel x86系统上，无论使用FreeBSD或Linux,如果执行一个输出“hello, world”但不调用exit或return的程序，则程序的返回代码为13 (用shell检查)，解释其原因。
+程序清单7-2中的printf函数的结果何时才会被真正输出？
+是否有方法不使用(a)参数传递(b)全局变量这两种方法，将main中的参数argc和argv传递给它所调用的其他函数？
+在有些UNIX系统中执行程序时访问不到其数据段的单元0，这是一种有意的安排，为什么？
+用C语言的typdef工具为终止处理程序定义一个新数据类型Exitfunc,使用该类型修改atexit的原型。
+如果用calloc分配一个long型的数组，数组的初始值是否为0?如果用calloc分配一个指针数组，数组的初始值是否为空指针？
+在7.6节size命令的输出结果中，为什么没有给出堆和栈的大小？
+为什么7.7节中两个文件的大小(4755TO和11410)不等于它们各自的文本和数据大小之和？
+为什么7.7节中对程序使用共享库以后改变了其可执行文件的大小？
+7.10在7.10节末尾，我们已经说明为什么不能将一个指针返回给一个自动变量，下面的程序是否正确？
+int
+fl{int val)
+int
+if (val int
+★ptr;
+0) { val;
+val
+ptr
+&val ；
+return(*ptr + 1),
+國
+
+ 
+
+ 
+

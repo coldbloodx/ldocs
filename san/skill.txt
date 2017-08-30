@@ -1,0 +1,18 @@
+teleport
+011011000
+100000
+
+
+battle cry
+010010010
+001000
+
+
+battle orders
+101010010
+011000
+
+
+battel command
+110110010
+011000
